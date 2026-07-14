@@ -1,12 +1,21 @@
 // 시안 3 - 메인화면.
-// 구조(위→아래): 헤더 / 시계 카드 / 습도·온도·스트레스 카드 / 오늘의 절전목표 카드
+// 구조(위→아래): 헤더 / 시계 카드 / 습도·온도·기압 카드 / 오늘의 절전목표 카드
 //              / 4개 메뉴 바로가기 / 하단 네비(사이렌·홈·북)
 //
 // 화면을 스크롤 없이 한 번에 다 보여줘야 하므로, 화면 높이가 작은 기기(iPhone SE 등)에서도
 // 안 잘리도록 useWindowDimensions로 화면 높이를 재서 카드 padding/폰트 크기를 함께 줄이는
 // `scale` 값을 만들어 쓴다. 큰 화면에서는 scale=1(원래 크기), 작은 화면일수록 최대 22%까지 축소.
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  Pressable,
+  TextInput,
+  useWindowDimensions,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 
@@ -20,19 +29,23 @@ import {
   GearIcon,
   DropletIcon,
   ThermometerIcon,
-  SmileyIcon,
+  PressureIcon,
   BoltOutlineIcon,
   RunnerIcon,
   FlagIcon,
   RemoteIcon,
   CalendarIcon,
   ChartUpIcon,
-  HeartPulseIcon,
+  TreeIcon,
 } from '../components/icons';
 
 // 디자인 기준 높이(iPhone 14 등 표준 화면). 이보다 작은 기기에서만 scale이 1 밑으로 내려간다.
 const REFERENCE_HEIGHT = 820;
 const MIN_SCALE = 0.78;
+
+// 시계/상태/목표/메뉴 4개 회색 블록 사이의 간격. 기존 space-between 자동 분배 값(약 31.6, scale=1
+// 기준)의 절반 정도로 고정했다가, 요청에 따라 한 번 더 살짝 줄인 값.
+const BLOCK_GAP = 12;
 
 // 상단 헤더: 좌측 VITA 로고, 우측 메뉴/알림/설정 아이콘 3개.
 // 로고와 아이콘들이 서로 비슷한 무게감으로 보이도록 같은 크기값(32)을 공유한다.
@@ -40,7 +53,7 @@ const HEADER_ICON_SIZE = 32;
 
 function Header({ scale }: { scale: number }) {
   return (
-    <View style={[styles.header, { paddingTop: 6 * scale, paddingBottom: 2 * scale }]}>
+    <View style={[styles.header, { paddingTop: 6 * scale, paddingBottom: 0 }]}>
       <VitaLogo size={HEADER_ICON_SIZE} />
       <View style={styles.headerIcons}>
         <TouchableOpacity hitSlop={12}>
@@ -57,20 +70,34 @@ function Header({ scale }: { scale: number }) {
   );
 }
 
+function formatTime(date: Date) {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 // 요일 + 현재 시각 카드. 시간 숫자만 7세그먼트 디지털시계 폰트(DSEG7)를 써서 디지털 시계 느낌을 낸다.
 // 요일은 카드 좌측에, 시간은 카드 안에서 가운데 정렬되도록 구성.
+// 시간은 실제 기기 시각을 표시하고, 분이 바뀔 수 있으니 10초마다 다시 읽어서 갱신한다.
 function TimeCard({ scale }: { scale: number }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 10000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <Card style={[styles.timeCard, { padding: 20 * scale }]}>
       <Text style={[styles.dayLabel, { fontSize: 26 * scale }]}>Wen</Text>
       <Text style={[styles.timeText, { fontSize: 92 * scale, marginTop: 4 * scale }]}>
-        10:28
+        {formatTime(now)}
       </Text>
     </Card>
   );
 }
 
-// 내부 습도 / 실내 온도 / 스트레스 3열 위젯
+// 내부 습도 / 실내 온도 / 기압 3열 위젯
 function StatusCard({ scale }: { scale: number }) {
   const iconWrapStyle = [styles.statusIconWrap, { height: 60 * scale, marginTop: 14 * scale }];
   const valueStyle = [styles.statusValue, { fontSize: 19 * scale, marginTop: 14 * scale }];
@@ -93,49 +120,219 @@ function StatusCard({ scale }: { scale: number }) {
           <Text style={valueStyle}>24.0 °C</Text>
         </View>
         <View style={styles.statusCol}>
-          <Text style={labelStyle}>스트레스</Text>
+          <Text style={labelStyle}>기압</Text>
           <View style={iconWrapStyle}>
-            <SmileyIcon size={56 * scale} />
+            <PressureIcon size={48 * scale} />
           </View>
-          <Text style={valueStyle}>좋음</Text>
+          <Text style={valueStyle}>1013 hPa</Text>
         </View>
       </View>
     </Card>
   );
 }
 
-// 오늘의 절전 목표 - 달성률 progress bar (달리는 사람 = 현재 지점, 깃발 = 목표 지점)
-function GoalCard({ scale }: { scale: number }) {
-  const progress = 42; // 절전 목표 달성률(%). 실제 앱에서는 서버 데이터로 교체될 값.
+type HouseholdSize = 1 | 2 | 3 | 4 | 5;
+
+// "한국 평균 전력 소비량"의 일반적으로 알려진 가구 인원별 월간 근사치(kWh). 실제 통계 API 연동은
+// 아니고, 절전 목표 기본값을 계산하기 위한 참고용 상수.
+const HOUSEHOLD_AVG_KWH: Record<HouseholdSize, number> = {
+  1: 200,
+  2: 250,
+  3: 300,
+  4: 350,
+  5: 400,
+};
+const HOUSEHOLD_OPTIONS: { size: HouseholdSize; label: string }[] = [
+  { size: 1, label: '1인 가구' },
+  { size: 2, label: '2인 가구' },
+  { size: 3, label: '3인 가구' },
+  { size: 4, label: '4인 가구' },
+  { size: 5, label: '5인 이상 가구' },
+];
+// 가구 인원별 평균 소비량 대비 25% 절감을 기본 목표로 삼는다.
+const GOAL_REDUCTION_RATIO = 0.25;
+const defaultGoalFor = (size: HouseholdSize) =>
+  Math.round(HOUSEHOLD_AVG_KWH[size] * (1 - GOAL_REDUCTION_RATIO));
+
+// 카드를 탭하면 뜨는 가구 인원 선택 모달 - 인원에 맞는 평균 소비량의 25% 절감분을 기본 목표로 설정한다.
+function HouseholdPickerModal({
+  visible,
+  selected,
+  onClose,
+  onSelect,
+}: {
+  visible: boolean;
+  selected: HouseholdSize | null;
+  onClose: () => void;
+  onSelect: (size: HouseholdSize) => void;
+}) {
   return (
-    <Card style={[styles.goalCard, { padding: 20 * scale }]}>
-      <View style={styles.goalTitleRow}>
-        <BoltOutlineIcon size={22 * scale} />
-        <Text style={[styles.goalTitle, { fontSize: 19 * scale }]}>오늘의 절전 목표</Text>
-      </View>
-      <View style={[styles.progressTrackWrap, { marginTop: 46 * scale }]}>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progress}%` }]} />
-        </View>
-        {/* 달리는 사람 아이콘을 현재 달성률 위치 위에 겹쳐서 그림 */}
-        <View style={[styles.runnerWrap, { left: `${progress}%`, marginLeft: -20 * scale }]}>
-          <RunnerIcon size={40 * scale} />
-        </View>
-        {/* 목표 깃발은 항상 바의 맨 오른쪽(100%) 끝에 위치 */}
-        <View style={styles.flagWrap}>
-          <FlagIcon size={40 * scale} />
-        </View>
-      </View>
-      <Text style={[styles.progressPercent, { fontSize: 16 * scale, marginTop: 14 * scale }]}>
-        {progress}%
-      </Text>
-    </Card>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Text style={styles.modalTitle}>가구 인원 선택</Text>
+          <Text style={styles.modalSubtitle}>
+            한국 평균 전력 소비량 대비 25% 절감을 기본 목표로 설정해요.
+          </Text>
+          <View style={styles.householdList}>
+            {HOUSEHOLD_OPTIONS.map(({ size, label }) => {
+              const isSelected = size === selected;
+              return (
+                <TouchableOpacity
+                  key={size}
+                  style={[styles.householdRow, isSelected && styles.householdRowSelected]}
+                  onPress={() => onSelect(size)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[styles.householdRowLabel, isSelected && styles.householdRowTextSelected]}
+                  >
+                    {label}
+                  </Text>
+                  <Text style={[styles.householdRowSub, isSelected && styles.householdRowTextSelected]}>
+                    목표 {defaultGoalFor(size)}kWh/월
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TouchableOpacity
+            style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
+            onPress={onClose}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.modalCloseText}>닫기</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// "수정" 버튼을 누르면 뜨는 모달 - 가구 인원 기준값과 무관하게 목표를 자유로운 숫자로 바꿀 수 있다.
+function GoalEditModal({
+  visible,
+  value,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  value: number | null;
+  onClose: () => void;
+  onSave: (kwh: number) => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    if (visible) setDraft(value != null ? String(value) : '');
+  }, [visible, value]);
+
+  const handleSave = () => {
+    const digits = draft.replace(/[^0-9]/g, '');
+    if (digits) onSave(Number(digits));
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Text style={styles.modalTitle}>절전 목표 수정</Text>
+          <View style={styles.goalEditRow}>
+            <TextInput
+              style={styles.goalEditInput}
+              value={draft}
+              onChangeText={(v) => setDraft(v.replace(/[^0-9]/g, ''))}
+              placeholder="목표"
+              placeholderTextColor={colors.textGray}
+              keyboardType="number-pad"
+            />
+            <Text style={styles.goalEditUnit}>kWh / 월</Text>
+          </View>
+          <View style={styles.modalBottomRow}>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+              <Text style={styles.modalCloseText}>취소</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.renameSaveButtonWide} onPress={handleSave} activeOpacity={0.7}>
+              <Text style={styles.renameSaveText}>저장</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// 오늘의 절전 목표 - 달성률 progress bar (달리는 사람 = 현재 지점, 깃발 = 목표 지점).
+// 카드를 탭하면 가구 인원 선택 모달이 열려 기본 목표(kWh)를 계산해주고, "수정" 버튼으로는
+// 그 값을 무시하고 자유롭게 원하는 숫자로 바꿀 수 있다.
+function GoalCard({ scale }: { scale: number }) {
+  const progress = 0; // 절전 목표 달성률(%). 이번 달 시작 시점이라 0%부터 시작하고, 실제 앱에서는 서버 데이터로 교체될 값.
+  const [householdSize, setHouseholdSize] = useState<HouseholdSize | null>(null);
+  const [goalKwh, setGoalKwh] = useState<number | null>(null);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+
+  return (
+    <>
+      <TouchableOpacity activeOpacity={0.85} onPress={() => setPickerVisible(true)}>
+        <Card style={[styles.goalCard, { padding: 20 * scale }]}>
+          <View style={styles.goalTitleRow}>
+            <BoltOutlineIcon size={22 * scale} />
+            <Text style={[styles.goalTitle, { fontSize: 19 * scale }]}>오늘의 절전 목표</Text>
+          </View>
+          <View style={[styles.progressTrackWrap, { marginTop: 46 * scale }]}>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progress}%` }]} />
+            </View>
+            {/* 달리는 사람 아이콘을 현재 달성률 위치 위에 겹쳐서 그림 */}
+            <View style={[styles.runnerWrap, { left: `${progress}%`, marginLeft: -20 * scale }]}>
+              <RunnerIcon size={40 * scale} />
+            </View>
+            {/* 목표 깃발은 항상 바의 맨 오른쪽(100%) 끝에 위치 */}
+            <View style={styles.flagWrap}>
+              <FlagIcon size={40 * scale} />
+            </View>
+          </View>
+          <Text style={[styles.progressPercent, { fontSize: 16 * scale, marginTop: 14 * scale }]}>
+            {progress}%
+          </Text>
+          {/* 목표를 아직 설정하지 않았을 땐 안내 문구 없이 카드를 탭하는 것만으로 설정 창이
+              열리게 하고, 목표가 있을 때만 이 행(kWh 표시 + 수정 버튼)을 보여준다. */}
+          {goalKwh != null && (
+            <View style={[styles.goalMetaRow, { marginTop: 6 * scale }]}>
+              <Text style={[styles.goalKwhText, { fontSize: 13 * scale }]}>목표 {goalKwh}kWh/월</Text>
+              <TouchableOpacity hitSlop={10} onPress={() => setEditVisible(true)}>
+                <Text style={[styles.goalEditText, { fontSize: 13 * scale }]}>수정</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </Card>
+      </TouchableOpacity>
+
+      <HouseholdPickerModal
+        visible={pickerVisible}
+        selected={householdSize}
+        onClose={() => setPickerVisible(false)}
+        onSelect={(size) => {
+          setHouseholdSize(size);
+          setGoalKwh(defaultGoalFor(size));
+          setPickerVisible(false);
+        }}
+      />
+      <GoalEditModal
+        visible={editVisible}
+        value={goalKwh}
+        onClose={() => setEditVisible(false)}
+        onSave={(kwh) => setGoalKwh(kwh)}
+      />
+    </>
   );
 }
 
 const MENU_GAP = 4;
 
-// 스마트홈 제어 / 캘린더 / 에너지 사용량 / 헬스케어로 이동하는 4개 바로가기 카드
+// 스마트홈 제어 / 캘린더 / 에너지 사용량 / 에너지 나무로 이동하는 4개 바로가기 카드
 function MenuGrid({ scale }: { scale: number }) {
   const navigation = useNavigation<any>();
   const { width } = useWindowDimensions();
@@ -145,7 +342,7 @@ function MenuGrid({ scale }: { scale: number }) {
     { label: '스마트홈 제어', Icon: RemoteIcon, route: 'SmartHomeControl' },
     { label: '캘린더', Icon: CalendarIcon, route: 'Calendar' },
     { label: '에너지 사용량', Icon: ChartUpIcon, route: 'EnergyUsage' },
-    { label: '헬스케어', Icon: HeartPulseIcon, route: 'Healthcare' },
+    { label: '에너지 나무', Icon: TreeIcon, route: 'EnergyTree' },
   ] as const;
 
   return (
@@ -173,15 +370,20 @@ export default function MainScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <Header scale={scale} />
-      {/* 스크롤 없이 화면 높이 안에 다 들어오도록 flex:1 + space-between으로
-          네 블록(시계/상태/목표/메뉴) 사이 여백을 화면 크기에 맞춰 자동 분배한다. */}
-      <View style={styles.middleContent}>
+      {/* 로고~시계, 블록 사이, 메뉴~하단 네비까지 전부 BLOCK_GAP 하나로 통일된 리듬을 갖도록
+          paddingTop(로고 밑 첫 간격)과 gap(블록 사이 간격)을 같은 값으로 준다. */}
+      <View style={[styles.middleContent, { paddingTop: BLOCK_GAP * scale, gap: BLOCK_GAP * scale }]}>
         <TimeCard scale={scale} />
         <StatusCard scale={scale} />
         <GoalCard scale={scale} />
         <MenuGrid scale={scale} />
       </View>
-      <View style={[styles.bottomNavWrap, { paddingTop: 4 * scale, paddingBottom: 6 * scale }]}>
+      {/* 홈 버튼(하단 네비)이 다른 화면들과 똑같이 화면 맨 아래에 붙어 있도록, 이 spacer가
+          flex:1로 남는 공간을 전부 떠안는다. 블록 사이 간격(BLOCK_GAP)에는 영향을 주지 않는다. */}
+      <View style={{ flex: 1 }} />
+      {/* bottomNavWrap은 다른 화면들(Calendar/EnergyUsage/EnergyTree/SmartHomeControl)과
+          동일하게 paddingTop:6, paddingBottom:10 고정값을 그대로 쓴다. */}
+      <View style={styles.bottomNavWrap}>
         <BottomNav variant="main" />
       </View>
     </SafeAreaView>
@@ -193,13 +395,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  // 스크롤 없이 화면 안에 모든 블록을 담기 위한 가운데 영역.
-  // flex:1 + justifyContent:'space-between'으로 기기 화면 높이에 맞춰
-  // 카드 사이 여백이 자동으로 줄어들거나 늘어난다.
+  // 로고/카드/메뉴/하단 네비 사이 간격을 전부 BLOCK_GAP으로 고정했으므로
+  // 더 이상 flex:1로 남는 공간을 채울 필요가 없어 콘텐츠 높이만큼만 차지한다.
   middleContent: {
-    flex: 1,
     paddingHorizontal: 20,
-    justifyContent: 'space-between',
   },
 
   header: {
@@ -288,6 +487,20 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
   },
+  goalMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  goalKwhText: {
+    fontFamily: fonts.jalnan,
+    color: colors.textGray2,
+  },
+  goalEditText: {
+    fontFamily: fonts.jalnan,
+    color: colors.orange,
+    textDecorationLine: 'underline',
+  },
 
   menuRow: {
     flexDirection: 'row',
@@ -309,5 +522,124 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 10,
     paddingTop: 6,
+  },
+
+  // 이 아래는 절전 목표 카드에서 뜨는 두 모달(가구 인원 선택/목표 수정)의 스타일.
+  // CalendarScreen의 모달들과 같은 값을 써서 앱 전체에서 모달 룩이 통일되도록 했다.
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 24,
+  },
+  modalTitle: {
+    fontFamily: fonts.jalnan,
+    fontSize: 19,
+    color: colors.text,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: colors.textGray,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 18,
+  },
+
+  householdList: {
+    gap: 8,
+    marginBottom: 8,
+  },
+  householdRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+  },
+  householdRowSelected: {
+    backgroundColor: colors.orange,
+  },
+  householdRowLabel: {
+    fontFamily: fonts.jalnan,
+    fontSize: 15,
+    color: colors.text,
+  },
+  householdRowSub: {
+    fontSize: 13,
+    color: colors.textGray2,
+  },
+  householdRowTextSelected: {
+    color: colors.white,
+  },
+
+  goalEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  goalEditInput: {
+    width: 100,
+    fontFamily: fonts.jalnan,
+    fontSize: 20,
+    color: colors.text,
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    textAlign: 'center',
+  },
+  goalEditUnit: {
+    fontFamily: fonts.jalnan,
+    fontSize: 15,
+    color: colors.textGray2,
+  },
+
+  modalBottomRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  modalCloseButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+  },
+  // 버튼 행(취소/저장) 없이 단독으로 쓰일 때는 flex:1이 세로로 늘어나 보이므로 상쇄한다.
+  modalCloseButtonSolo: {
+    flex: 0,
+    marginTop: 16,
+  },
+  modalCloseText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 15,
+    color: colors.text,
+  },
+  renameSaveButtonWide: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.orange,
+  },
+  renameSaveText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 15,
+    color: colors.white,
   },
 });

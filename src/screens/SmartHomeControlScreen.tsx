@@ -26,41 +26,45 @@ const SCREEN_PADDING = 20;
 const GRID_GAP = 14;
 const MAX_ROOMS = 12; // "+" 버튼으로 추가할 수 있는 방의 최대 개수
 
-type Device = { name: string; on: boolean };
+// mode: 'auto'면 센서가 읽은 전원 상태(on)를 그대로 보여주기만 하고, 'manual'이면 센서 고장 등에
+// 대비해 사용자가 직접 on/off를 지정한 값이다. 평소엔 전부 'auto'로 시작한다.
+type DeviceMode = 'auto' | 'manual';
+type Device = { name: string; on: boolean; mode: DeviceMode };
 type Room = { id: string; label: string; devices: Device[] };
 
-// 초기 방 목록 + 방별 기기 ON/OFF 목업 데이터. 실제 앱에서는 서버/기기 상태로 교체될 값.
+// 초기 방 목록 + 방별 기기 목업 데이터. 아직 아무 기기도 켠 적이 없는 상태를 나타내야 하므로
+// 전부 on:false로 시작한다 - "현재 활성화된 기기"가 처음부터 0대로 보여야 한다.
 const initialRooms: Room[] = [
   {
     id: 'room-1',
     label: '거실',
     devices: [
-      { name: '조명', on: true },
-      { name: '에어컨', on: true },
-      { name: 'TV', on: false },
+      { name: '조명', on: false, mode: 'auto' },
+      { name: '에어컨', on: false, mode: 'auto' },
+      { name: 'TV', on: false, mode: 'auto' },
     ],
   },
   {
     id: 'room-2',
     label: 'ROOM 2',
     devices: [
-      { name: '조명', on: false },
-      { name: '선풍기', on: false },
+      { name: '조명', on: false, mode: 'auto' },
+      { name: '선풍기', on: false, mode: 'auto' },
     ],
   },
   {
     id: 'room-3',
     label: 'ROOM 3',
     devices: [
-      { name: '조명', on: false },
-      { name: '난방', on: false },
+      { name: '조명', on: false, mode: 'auto' },
+      { name: '난방', on: false, mode: 'auto' },
     ],
   },
 ];
 
 // 새로 추가되는 방에 기본으로 붙는 기기 목록
 function defaultDevices(): Device[] {
-  return [{ name: '조명', on: false }];
+  return [{ name: '조명', on: false, mode: 'auto' }];
 }
 
 // 현재 켜져있는 기기 대수를 보여주는 상단 카드
@@ -74,7 +78,8 @@ function ActiveDevicesCard({ scale, count }: { scale: number; count: number }) {
 }
 
 // 방 하나를 나타내는 카드.
-// 좌상단에 켜져있는 기기 개수만큼 초록 점을 나란히 표시한다 (0개면 점 없음).
+// 좌상단에 켜져있는 기기가 하나라도 있으면 초록 점 하나만 표시한다(개수와 무관하게 항상 1개 - 몇 대가
+// 켜져 있는지가 아니라 "이 방에 켜진 기기가 있는지"만 보여주기 위함). 0개면 점 없음.
 // 우상단 "..." 버튼은 그 방의 설정 창(이름 수정 + 기기 ON/OFF 현황)을 연다.
 function RoomCard({
   label,
@@ -97,13 +102,7 @@ function RoomCard({
       onPress={onPress}
       activeOpacity={0.8}
     >
-      {onCount > 0 && (
-        <View style={styles.activeDotRow}>
-          {Array.from({ length: onCount }).map((_, i) => (
-            <View key={i} style={styles.activeDot} />
-          ))}
-        </View>
-      )}
+      {onCount > 0 && <View style={styles.activeDot} />}
       <TouchableOpacity
         style={styles.ellipsisWrap}
         onPress={onOpenSettings}
@@ -117,17 +116,23 @@ function RoomCard({
   );
 }
 
-// "..." 버튼을 누르면 뜨는 방 설정 창 - 이름 수정 + 기기 ON/OFF 현황 + 방 삭제
+// "..." 버튼을 누르면 뜨는 방 설정 창 - 이름 수정 + 기기 ON/OFF 현황(자동/수동) + 방 삭제.
+// 기기별로 평소엔 "자동"(센서가 읽은 값을 그대로 표시, 직접 못 누름)이고, "수동"으로 바꾸면
+// 센서 고장 등으로 값을 믿을 수 없을 때 ON/OFF 배지를 직접 눌러 바꿀 수 있다.
 function RoomSettingsModal({
   room,
   onClose,
   onRename,
   onDelete,
+  onToggleDeviceMode,
+  onToggleDevicePower,
 }: {
   room: Room | null;
   onClose: () => void;
   onRename: (id: string, label: string) => void;
   onDelete: (id: string) => void;
+  onToggleDeviceMode: (roomId: string, deviceName: string) => void;
+  onToggleDevicePower: (roomId: string, deviceName: string) => void;
 }) {
   const [nameInput, setNameInput] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -191,13 +196,47 @@ function RoomSettingsModal({
                 </TouchableOpacity>
               </View>
 
+              <Text style={styles.deviceSectionHint}>
+                평소엔 센서가 자동으로 전원 상태를 확인해요. 센서 오류 등으로 값이 다르면
+                "수동"으로 바꿔 직접 켜고 끌 수 있어요.
+              </Text>
+
               {room?.devices.map((d) => (
                 <View key={d.name} style={styles.deviceRow}>
                   <Text style={styles.deviceName}>{d.name}</Text>
-                  <View style={[styles.statusBadge, d.on ? styles.statusOn : styles.statusOff]}>
-                    <Text style={[styles.statusText, d.on ? styles.statusTextOn : styles.statusTextOff]}>
-                      {d.on ? 'ON' : 'OFF'}
-                    </Text>
+                  <View style={styles.deviceControls}>
+                    <TouchableOpacity
+                      style={[styles.modeToggle, d.mode === 'manual' && styles.modeToggleManual]}
+                      onPress={() => room && onToggleDeviceMode(room.id, d.name)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.modeToggleText,
+                          d.mode === 'manual' && styles.modeToggleTextManual,
+                        ]}
+                      >
+                        {d.mode === 'auto' ? '자동' : '수동'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {d.mode === 'manual' ? (
+                      <TouchableOpacity
+                        style={[styles.statusBadge, d.on ? styles.statusOn : styles.statusOff]}
+                        onPress={() => room && onToggleDevicePower(room.id, d.name)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.statusText, d.on ? styles.statusTextOn : styles.statusTextOff]}>
+                          {d.on ? 'ON' : 'OFF'}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={[styles.statusBadge, d.on ? styles.statusOn : styles.statusOff]}>
+                        <Text style={[styles.statusText, d.on ? styles.statusTextOn : styles.statusTextOff]}>
+                          {d.on ? 'ON' : 'OFF'}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               ))}
@@ -273,6 +312,37 @@ export default function SmartHomeControlScreen() {
     setRooms(rooms.filter((r) => r.id !== id));
   };
 
+  // 기기 하나의 자동/수동 모드를 토글한다. 수동으로 바뀌면 그때부터 on 값은 센서가 아니라
+  // 사용자가 아래 toggleDevicePower로 직접 정한다.
+  const toggleDeviceMode = (roomId: string, deviceName: string) => {
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id !== roomId
+          ? r
+          : {
+              ...r,
+              devices: r.devices.map((d) =>
+                d.name === deviceName ? { ...d, mode: d.mode === 'auto' ? 'manual' : 'auto' } : d
+              ),
+            }
+      )
+    );
+  };
+
+  // 수동 모드 기기의 ON/OFF를 직접 뒤집는다(자동 모드일 때는 배지가 눌리지 않으므로 호출되지 않음).
+  const toggleDevicePower = (roomId: string, deviceName: string) => {
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id !== roomId
+          ? r
+          : {
+              ...r,
+              devices: r.devices.map((d) => (d.name === deviceName ? { ...d, on: !d.on } : d)),
+            }
+      )
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={[styles.content, { paddingTop: 20 * scale }]}>
@@ -303,6 +373,8 @@ export default function SmartHomeControlScreen() {
         onClose={() => setSettingsRoomId(null)}
         onRename={renameRoom}
         onDelete={deleteRoom}
+        onToggleDeviceMode={toggleDeviceMode}
+        onToggleDevicePower={toggleDevicePower}
       />
     </SafeAreaView>
   );
@@ -344,14 +416,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: 20,
   },
-  activeDotRow: {
+  // 켜진 기기가 있는 방 카드 좌상단에 표시하는 점 하나. 개수 상관없이 항상 이 점 하나만 쓴다.
+  activeDot: {
     position: 'absolute',
     top: 18,
     left: 18,
-    flexDirection: 'row',
-    gap: 5,
-  },
-  activeDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
@@ -426,6 +495,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.white,
   },
+  deviceSectionHint: {
+    fontSize: 12,
+    color: colors.textGray,
+    lineHeight: 16,
+    marginBottom: 10,
+  },
   deviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -438,6 +513,30 @@ const styles = StyleSheet.create({
     fontFamily: fonts.jalnan,
     fontSize: 16,
     color: colors.text,
+  },
+  deviceControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  // 기기별 자동/수동 전환 pill. 수동일 때만 강조색으로 바꿔서, 지금 "센서 대신 내가 직접
+  // 정한 값"이라는 걸 한눈에 알아볼 수 있게 한다.
+  modeToggle: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+  },
+  modeToggleManual: {
+    backgroundColor: colors.orange,
+  },
+  modeToggleText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 12,
+    color: colors.textGray2,
+  },
+  modeToggleTextManual: {
+    color: colors.white,
   },
   statusBadge: {
     paddingVertical: 5,

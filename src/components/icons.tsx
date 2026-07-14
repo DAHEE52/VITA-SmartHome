@@ -1,7 +1,7 @@
 // 화면 전반에서 재사용되는 아이콘 모음.
 // 일부는 0~100 기준 정사각형 viewBox의 직접 그린 라인 아이콘(size, color props)이고,
-// 일부(달리기/리모컨/캘린더/그래프/헬스케어)는 UIUX/icon 폴더의 svg 아트를,
-// 일부(온도계/깃발)는 같은 폴더의 png 아트를 그대로 불러와 쓴다.
+// 일부(달리기/리모컨/캘린더/그래프)는 UIUX/icon 폴더의 svg 아트를,
+// 일부(온도계/깃발/기압/에너지 나무)는 같은 폴더의 png 아트를 그대로 불러와 쓴다.
 // 둘 다 원본 비율을 유지한 채(svg는 preserveAspectRatio, png는 resizeMode="contain") size 프롭 하나로 스케일된다.
 import React from 'react';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
@@ -12,7 +12,6 @@ import RunnerSvg from '../../UIUX/icon/runner.svg';
 import RemoteSvg from '../../UIUX/icon/remote.svg';
 import CalendarSvg from '../../UIUX/icon/calendar.svg';
 import GraphSvg from '../../UIUX/icon/graph.svg';
-import HealthcareSvg from '../../UIUX/icon/healthcare.svg';
 
 type IconProps = { size?: number; color?: string };
 
@@ -99,21 +98,17 @@ export function ThermometerIcon({ size = 40 }: { size?: number }) {
   );
 }
 
-// 스트레스 위젯의 웃는 얼굴 (노란 원 + 검은 이목구비) - "좋음" 상태 표현용
-export function SmileyIcon({ size = 40 }: { size?: number }) {
+// 기압 위젯의 게이지 아이콘.
+// 원본 png(8-기압.png)는 캔버스 안에 실제 그림이 차지하는 비율이 온도계 아이콘보다 훨씬 작아서
+// (500x500 캔버스에 그림은 약 400x273) 같은 size를 줘도 눈에 띄게 작아 보였다. 투명 여백을
+// 잘라낸 8-기압-cropped.png로 바꿔서 다른 위젯 아이콘들과 체감 크기가 맞도록 했다.
+export function PressureIcon({ size = 40 }: { size?: number }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 100 100">
-      <Circle cx={50} cy={50} r={44} fill={colors.yellow} />
-      <Circle cx={35} cy={44} r={5} fill={colors.text} />
-      <Circle cx={65} cy={44} r={5} fill={colors.text} />
-      <Path
-        d="M32 60 C38 70 62 70 68 60"
-        fill="none"
-        stroke={colors.text}
-        strokeWidth={5}
-        strokeLinecap="round"
-      />
-    </Svg>
+    <Image
+      source={require('../../UIUX/icon/8-기압-cropped.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
   );
 }
 
@@ -163,9 +158,15 @@ export function ChartUpIcon({ size = 40 }: { size?: number }) {
   return <GraphSvg width={size} height={size} />;
 }
 
-// "헬스케어" 메뉴 아이콘
-export function HeartPulseIcon({ size = 40 }: { size?: number }) {
-  return <HealthcareSvg width={size} height={size} />;
+// "에너지 나무" 메뉴 아이콘
+export function TreeIcon({ size = 40 }: { size?: number }) {
+  return (
+    <Image
+      source={require('../../UIUX/icon/9-에너지 나무.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
 }
 
 // 방/카드 우측 상단에 쓰이는 "..." 더보기 아이콘
