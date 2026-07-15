@@ -9,6 +9,11 @@ import * as SplashScreenModule from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 
 import RootNavigator from './src/navigation/RootNavigator';
+import { GoalProvider } from './src/context/GoalContext';
+import { RoomsProvider } from './src/context/RoomsContext';
+import { EnergyHistoryProvider } from './src/context/EnergyHistoryContext';
+import { NotificationsProvider } from './src/context/NotificationsContext';
+import { SettingsProvider } from './src/context/SettingsContext';
 
 // 네이티브 스플래시(앱 아이콘 로딩 화면)가 폰트 로딩 전에 자동으로 사라지지 않도록 유지시킨다.
 SplashScreenModule.preventAutoHideAsync().catch(() => {});
@@ -35,7 +40,17 @@ export default function App() {
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
       <StatusBar style="dark" />
-      <RootNavigator />
+      <GoalProvider>
+        <RoomsProvider>
+          <EnergyHistoryProvider>
+            <NotificationsProvider>
+              <SettingsProvider>
+                <RootNavigator />
+              </SettingsProvider>
+            </NotificationsProvider>
+          </EnergyHistoryProvider>
+        </RoomsProvider>
+      </GoalProvider>
     </View>
   );
 }

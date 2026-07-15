@@ -189,3 +189,13 @@ export function PlusIcon({ size = 24, color = colors.text }: IconProps) {
     </Svg>
   );
 }
+
+// 삭제/닫기용 "X" 아이콘. PlusIcon과 같은 두 직선 조합을 대각선으로 그린 것.
+export function CloseIcon({ size = 24, color = colors.text }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 100">
+      <Line x1={22} y1={22} x2={78} y2={78} stroke={color} strokeWidth={8} strokeLinecap="round" />
+      <Line x1={78} y1={22} x2={22} y2={78} stroke={color} strokeWidth={8} strokeLinecap="round" />
+    </Svg>
+  );
+}

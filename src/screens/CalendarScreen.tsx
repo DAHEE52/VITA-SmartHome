@@ -4,7 +4,7 @@
 // 참고: "2026"·"7월" 큰 타이틀만 다른 화면과 같은 Jalnan 폰트를 쓰고,
 // 요일/날짜/DAILY·SPECIAL/일정 텍스트는 원본 시안에서 각지지 않은 깔끔한 굵은 고딕이라
 // 시스템 기본 폰트에 fontWeight만 bold로 줘서 구분했다.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
   Pressable,
   TextInput,
   ScrollView,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -313,8 +315,72 @@ function DatePickerModal({
   );
 }
 
-// 시간 입력칸을 누르면 뜨는 시간 선택 모달 - 시(0~23)/분(0~59) 각각 ‹ › 스테퍼로 고른다.
-// 자유 텍스트 입력을 없애서 0:00~23:59 범위 밖의 값이 들어갈 수 없게 한다.
+// 숫자 휠 한 칸의 높이(px) - 가운데 줄(선택된 값)이 이 높이만큼의 슬롯에 오도록 맞춘다.
+const WHEEL_ITEM_HEIGHT = 40;
+// 위아래로 보이는 줄 수(선택 줄 포함 홀수). 3이면 위/가운데/아래 3줄이 보인다.
+const WHEEL_VISIBLE_COUNT = 3;
+const WHEEL_HEIGHT = WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_COUNT;
+
+// 세로로 스크롤해서 숫자 하나를 고르는 휠 - 가운데 칸에 걸린 값이 선택값이 된다(스냅 스크롤).
+// 위/아래에 패딩을 한 칸씩 둬서 첫 값과 마지막 값도 가운데까지 스크롤될 수 있게 한다.
+function DigitWheel({ value, options, onChange }: { value: number; options: number[]; onChange: (v: number) => void }) {
+  const scrollRef = useRef<ScrollView>(null);
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    const index = Math.max(0, options.indexOf(value));
+    scrollRef.current?.scrollTo({ y: index * WHEEL_ITEM_HEIGHT, animated: isMounted.current });
+    isMounted.current = true;
+  }, [value, options]);
+
+  const handleSnap = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const rawIndex = e.nativeEvent.contentOffset.y / WHEEL_ITEM_HEIGHT;
+    const index = Math.max(0, Math.min(options.length - 1, Math.round(rawIndex)));
+    scrollRef.current?.scrollTo({ y: index * WHEEL_ITEM_HEIGHT, animated: true });
+    if (options[index] !== value) onChange(options[index]);
+  };
+
+  return (
+    <View style={styles.wheelContainer}>
+      <View style={styles.wheelSelectionBar} pointerEvents="none" />
+      <ScrollView
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={WHEEL_ITEM_HEIGHT}
+        decelerationRate="fast"
+        onMomentumScrollEnd={handleSnap}
+        onScrollEndDrag={handleSnap}
+        contentContainerStyle={{ paddingVertical: WHEEL_ITEM_HEIGHT }}
+      >
+        {options.map((opt) => (
+          <View key={opt} style={styles.wheelItem}>
+            <Text style={styles.wheelDigitText}>{opt}</Text>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+const HOUR12_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1); // 1~12
+const MINUTE_TENS_OPTIONS = [0, 1, 2, 3, 4, 5];
+const MINUTE_ONES_OPTIONS = Array.from({ length: 10 }, (_, i) => i);
+
+// 24시간제 hour(0~23)를 12시간제 표시값(1~12)과 오전/오후로 변환한다.
+function to12Hour(hour24: number): { hour12: number; isPM: boolean } {
+  const isPM = hour24 >= 12;
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return { hour12, isPM };
+}
+// 12시간제 표시값(1~12) + 오전/오후를 다시 24시간제 hour(0~23)로 합친다.
+function to24Hour(hour12: number, isPM: boolean): number {
+  const base = hour12 % 12; // 12시는 0으로
+  return isPM ? base + 12 : base;
+}
+
+// 시간 입력칸을 누르면 뜨는 시간 선택 모달 - 시는 1~12 중에서 스크롤 휠로, 오전/오후는 별도 선택창으로,
+// 분은 십의 자리·일의 자리를 따로 스크롤 휠로 고른다. 자유 텍스트 입력이 없어 항상 유효한 시각만 나온다.
+// 내부적으로는 계속 24시간제(hour: 0~23)로 값을 주고받아, 일정 저장/표시 로직은 그대로 둔다.
 function TimePickerModal({
   visible,
   hour,
@@ -338,48 +404,43 @@ function TimePickerModal({
     }
   }, [visible, hour, minute]);
 
+  const { hour12, isPM } = to12Hour(draftHour);
+  const mTens = Math.floor(draftMinute / 10);
+  const mOnes = draftMinute % 10;
+
+  const setHour12 = (h: number) => setDraftHour(to24Hour(h, isPM));
+  const setIsPM = (pm: boolean) => setDraftHour(to24Hour(hour12, pm));
+  const setMTens = (t: number) => setDraftMinute(t * 10 + mOnes);
+  const setMOnes = (o: number) => setDraftMinute(mTens * 10 + o);
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => {}}>
           <Text style={styles.modalTitle}>시간 선택</Text>
 
-          <View style={styles.timeStepperRow}>
-            <View style={styles.timeStepperCol}>
-              <TouchableOpacity
-                style={styles.yearStepButton}
-                onPress={() => setDraftHour((h) => (h + 23) % 24)}
-                hitSlop={10}
-              >
-                <Text style={styles.yearStepText}>‹</Text>
-              </TouchableOpacity>
-              <Text style={styles.timeStepperValue}>{String(draftHour).padStart(2, '0')}</Text>
-              <TouchableOpacity
-                style={styles.yearStepButton}
-                onPress={() => setDraftHour((h) => (h + 1) % 24)}
-                hitSlop={10}
-              >
-                <Text style={styles.yearStepText}>›</Text>
-              </TouchableOpacity>
-            </View>
+          <View style={styles.ampmRow}>
+            <TouchableOpacity
+              style={[styles.ampmChip, !isPM && styles.ampmChipSelected]}
+              onPress={() => setIsPM(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.ampmChipText, !isPM && styles.ampmChipTextSelected]}>오전</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.ampmChip, isPM && styles.ampmChipSelected]}
+              onPress={() => setIsPM(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.ampmChipText, isPM && styles.ampmChipTextSelected]}>오후</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.wheelRow}>
+            <DigitWheel value={hour12} options={HOUR12_OPTIONS} onChange={setHour12} />
             <Text style={styles.timeStepperColon}>:</Text>
-            <View style={styles.timeStepperCol}>
-              <TouchableOpacity
-                style={styles.yearStepButton}
-                onPress={() => setDraftMinute((m) => (m + 59) % 60)}
-                hitSlop={10}
-              >
-                <Text style={styles.yearStepText}>‹</Text>
-              </TouchableOpacity>
-              <Text style={styles.timeStepperValue}>{String(draftMinute).padStart(2, '0')}</Text>
-              <TouchableOpacity
-                style={styles.yearStepButton}
-                onPress={() => setDraftMinute((m) => (m + 1) % 60)}
-                hitSlop={10}
-              >
-                <Text style={styles.yearStepText}>›</Text>
-              </TouchableOpacity>
-            </View>
+            <DigitWheel value={mTens} options={MINUTE_TENS_OPTIONS} onChange={setMTens} />
+            <DigitWheel value={mOnes} options={MINUTE_ONES_OPTIONS} onChange={setMOnes} />
           </View>
 
           <TouchableOpacity
@@ -961,30 +1022,68 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // 시간 선택 모달의 시/분 스테퍼. ‹ › 버튼(yearStepButton/yearStepText 재사용)과 값 사이에
-  // 넉넉한 gap을 줘서 시/분 두 칸이 한 줄에 나란히 오도록 한다.
-  timeStepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  timeStepperCol: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  timeStepperValue: {
-    fontFamily: fonts.jalnan,
-    fontSize: 24,
-    color: colors.text,
-    minWidth: 40,
-    textAlign: 'center',
-  },
   timeStepperColon: {
     fontFamily: fonts.jalnan,
     fontSize: 24,
+    color: colors.text,
+  },
+
+  // 시간 선택 모달의 오전/오후 선택 칩 2개.
+  ampmRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  ampmChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+  },
+  ampmChipSelected: {
+    backgroundColor: colors.orange,
+  },
+  ampmChipText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 14,
+    color: colors.textGray2,
+  },
+  ampmChipTextSelected: {
+    color: colors.white,
+  },
+
+  // 시간 선택 모달의 시(1~12) 휠 + 분 숫자 휠 2칸(십의자리/일의자리) + 콜론.
+  wheelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginBottom: 16,
+  },
+  wheelContainer: {
+    width: 44,
+    height: WHEEL_HEIGHT,
+    overflow: 'hidden',
+  },
+  // 휠 가운데 줄(선택 슬롯)을 표시하는 배경 바 - 스크롤 내용 뒤에 고정으로 깔린다.
+  wheelSelectionBar: {
+    position: 'absolute',
+    top: WHEEL_ITEM_HEIGHT,
+    left: 0,
+    right: 0,
+    height: WHEEL_ITEM_HEIGHT,
+    borderRadius: 8,
+    backgroundColor: colors.card,
+  },
+  wheelItem: {
+    height: WHEEL_ITEM_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wheelDigitText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 20,
     color: colors.text,
   },
 

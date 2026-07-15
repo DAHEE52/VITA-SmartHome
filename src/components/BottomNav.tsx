@@ -67,8 +67,7 @@ export default function BottomNav({ variant = 'main' }: Props) {
           space-between처럼 아이콘 자체 크기에 좌우되는 정렬 대신 이 방식을 써야
           가운데 칸(홈)이 항상 행의 정확한 가로 중앙에 온다. */}
       <View style={styles.mainCol}>
-        {/* 사이렌 탭은 아직 연결할 화면이 없어 현재는 시각적 요소로만 존재 */}
-        <TouchableOpacity hitSlop={16}>
+        <TouchableOpacity onPress={() => navigation.navigate('FirePrevention')} hitSlop={16}>
           <SirenIcon size={iconSize} />
         </TouchableOpacity>
       </View>
@@ -78,7 +77,7 @@ export default function BottomNav({ variant = 'main' }: Props) {
         </TouchableOpacity>
       </View>
       <View style={styles.mainCol}>
-        <TouchableOpacity hitSlop={16}>
+        <TouchableOpacity onPress={() => navigation.navigate('Guidebook')} hitSlop={16}>
           <BookIcon size={iconSize} />
         </TouchableOpacity>
       </View>

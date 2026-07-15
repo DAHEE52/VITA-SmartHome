@@ -38,6 +38,10 @@ import {
   ChartUpIcon,
   TreeIcon,
 } from '../components/icons';
+import { useGoal, HouseholdSize } from '../context/GoalContext';
+import { useNotifications } from '../context/NotificationsContext';
+import MenuModal from '../components/MenuModal';
+import NotificationsModal from '../components/NotificationsModal';
 
 // 디자인 기준 높이(iPhone 14 등 표준 화면). 이보다 작은 기기에서만 scale이 1 밑으로 내려간다.
 const REFERENCE_HEIGHT = 820;
@@ -52,20 +56,28 @@ const BLOCK_GAP = 12;
 const HEADER_ICON_SIZE = 32;
 
 function Header({ scale }: { scale: number }) {
+  const navigation = useNavigation<any>();
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const { unreadCount } = useNotifications();
+
   return (
     <View style={[styles.header, { paddingTop: 6 * scale, paddingBottom: 0 }]}>
       <VitaLogo size={HEADER_ICON_SIZE} />
       <View style={styles.headerIcons}>
-        <TouchableOpacity hitSlop={12}>
+        <TouchableOpacity hitSlop={12} onPress={() => setMenuVisible(true)}>
           <MenuIcon size={HEADER_ICON_SIZE} />
         </TouchableOpacity>
-        <TouchableOpacity hitSlop={12}>
+        <TouchableOpacity hitSlop={12} onPress={() => setNotificationsVisible(true)} style={styles.bellWrap}>
           <BellIcon size={HEADER_ICON_SIZE} />
+          {unreadCount > 0 && <View style={styles.unreadBadge} />}
         </TouchableOpacity>
-        <TouchableOpacity hitSlop={12}>
+        <TouchableOpacity hitSlop={12} onPress={() => navigation.navigate('Settings')}>
           <GearIcon size={HEADER_ICON_SIZE} />
         </TouchableOpacity>
       </View>
+      <MenuModal visible={menuVisible} onClose={() => setMenuVisible(false)} />
+      <NotificationsModal visible={notificationsVisible} onClose={() => setNotificationsVisible(false)} />
     </View>
   );
 }
@@ -130,8 +142,6 @@ function StatusCard({ scale }: { scale: number }) {
     </Card>
   );
 }
-
-type HouseholdSize = 1 | 2 | 3 | 4 | 5;
 
 // "한국 평균 전력 소비량"의 일반적으로 알려진 가구 인원별 월간 근사치(kWh). 실제 통계 API 연동은
 // 아니고, 절전 목표 기본값을 계산하기 위한 참고용 상수.
@@ -210,16 +220,20 @@ function HouseholdPickerModal({
 }
 
 // "수정" 버튼을 누르면 뜨는 모달 - 가구 인원 기준값과 무관하게 목표를 자유로운 숫자로 바꿀 수 있다.
+// "초기화" 버튼은 값을 다른 숫자로 되돌리는 게 아니라 절전 목표 자체를 완전히 삭제한다 - 삭제 후엔
+// 카드가 "목표 미설정" 상태로 돌아가서, 다시 탭하면 가구 인원 선택부터 새로 시작한다.
 function GoalEditModal({
   visible,
   value,
   onClose,
   onSave,
+  onReset,
 }: {
   visible: boolean;
   value: number | null;
   onClose: () => void;
   onSave: (kwh: number) => void;
+  onReset: () => void;
 }) {
   const [draft, setDraft] = useState('');
 
@@ -230,6 +244,11 @@ function GoalEditModal({
   const handleSave = () => {
     const digits = draft.replace(/[^0-9]/g, '');
     if (digits) onSave(Number(digits));
+    onClose();
+  };
+
+  const handleReset = () => {
+    onReset();
     onClose();
   };
 
@@ -249,6 +268,9 @@ function GoalEditModal({
             />
             <Text style={styles.goalEditUnit}>kWh / 월</Text>
           </View>
+          <TouchableOpacity onPress={handleReset} activeOpacity={0.7}>
+            <Text style={styles.goalResetText}>절전 목표 삭제(초기화)</Text>
+          </TouchableOpacity>
           <View style={styles.modalBottomRow}>
             <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>취소</Text>
@@ -268,8 +290,10 @@ function GoalEditModal({
 // 그 값을 무시하고 자유롭게 원하는 숫자로 바꿀 수 있다.
 function GoalCard({ scale }: { scale: number }) {
   const progress = 0; // 절전 목표 달성률(%). 이번 달 시작 시점이라 0%부터 시작하고, 실제 앱에서는 서버 데이터로 교체될 값.
-  const [householdSize, setHouseholdSize] = useState<HouseholdSize | null>(null);
-  const [goalKwh, setGoalKwh] = useState<number | null>(null);
+  // householdSize/goalKwh는 다른 화면으로 이동했다가 돌아와도 값이 유지되도록 GoalProvider(App.tsx
+  // 최상단에 마운트됨)가 들고 있는 전역 값을 쓴다. 모달 열림 여부는 화면을 나가면 초기화되는 게
+  // 자연스러우므로 그대로 이 컴포넌트의 지역 state로 둔다.
+  const { householdSize, goalKwh, setHouseholdSize, setGoalKwh, resetGoal } = useGoal();
   const [pickerVisible, setPickerVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
 
@@ -325,6 +349,7 @@ function GoalCard({ scale }: { scale: number }) {
         value={goalKwh}
         onClose={() => setEditVisible(false)}
         onSave={(kwh) => setGoalKwh(kwh)}
+        onReset={resetGoal}
       />
     </>
   );
@@ -413,6 +438,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 20,
+  },
+  bellWrap: {
+    position: 'relative',
+  },
+  // 안읽은 알림이 있을 때 종 아이콘 우상단에 표시하는 빨간 점
+  unreadBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.red,
+    borderWidth: 1.5,
+    borderColor: colors.white,
   },
 
   timeCard: {},
@@ -606,6 +646,14 @@ const styles = StyleSheet.create({
     fontFamily: fonts.jalnan,
     fontSize: 15,
     color: colors.textGray2,
+  },
+  goalResetText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 12,
+    color: colors.red,
+    textDecorationLine: 'underline',
+    textAlign: 'center',
+    marginBottom: 12,
   },
 
   modalBottomRow: {

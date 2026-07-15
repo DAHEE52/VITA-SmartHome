@@ -17,55 +17,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
-import { EllipsisIcon, PlusIcon } from '../components/icons';
+import { PlusIcon, CloseIcon } from '../components/icons';
+import { useRooms, Room, MAX_ROOMS } from '../context/RoomsContext';
 
 // 화면이 작은 기기에서는 카드 padding/폰트 크기를 함께 줄이는 scale 값을 쓴다.
 const REFERENCE_HEIGHT = 820;
 const MIN_SCALE = 0.7;
 const SCREEN_PADDING = 20;
 const GRID_GAP = 14;
-const MAX_ROOMS = 12; // "+" 버튼으로 추가할 수 있는 방의 최대 개수
-
-// mode: 'auto'면 센서가 읽은 전원 상태(on)를 그대로 보여주기만 하고, 'manual'이면 센서 고장 등에
-// 대비해 사용자가 직접 on/off를 지정한 값이다. 평소엔 전부 'auto'로 시작한다.
-type DeviceMode = 'auto' | 'manual';
-type Device = { name: string; on: boolean; mode: DeviceMode };
-type Room = { id: string; label: string; devices: Device[] };
-
-// 초기 방 목록 + 방별 기기 목업 데이터. 아직 아무 기기도 켠 적이 없는 상태를 나타내야 하므로
-// 전부 on:false로 시작한다 - "현재 활성화된 기기"가 처음부터 0대로 보여야 한다.
-const initialRooms: Room[] = [
-  {
-    id: 'room-1',
-    label: '거실',
-    devices: [
-      { name: '조명', on: false, mode: 'auto' },
-      { name: '에어컨', on: false, mode: 'auto' },
-      { name: 'TV', on: false, mode: 'auto' },
-    ],
-  },
-  {
-    id: 'room-2',
-    label: 'ROOM 2',
-    devices: [
-      { name: '조명', on: false, mode: 'auto' },
-      { name: '선풍기', on: false, mode: 'auto' },
-    ],
-  },
-  {
-    id: 'room-3',
-    label: 'ROOM 3',
-    devices: [
-      { name: '조명', on: false, mode: 'auto' },
-      { name: '난방', on: false, mode: 'auto' },
-    ],
-  },
-];
-
-// 새로 추가되는 방에 기본으로 붙는 기기 목록
-function defaultDevices(): Device[] {
-  return [{ name: '조명', on: false, mode: 'auto' }];
-}
 
 // 현재 켜져있는 기기 대수를 보여주는 상단 카드
 function ActiveDevicesCard({ scale, count }: { scale: number; count: number }) {
@@ -77,46 +36,37 @@ function ActiveDevicesCard({ scale, count }: { scale: number; count: number }) {
   );
 }
 
-// 방 하나를 나타내는 카드.
+// 방 하나를 나타내는 회색 박스 카드.
 // 좌상단에 켜져있는 기기가 하나라도 있으면 초록 점 하나만 표시한다(개수와 무관하게 항상 1개 - 몇 대가
 // 켜져 있는지가 아니라 "이 방에 켜진 기기가 있는지"만 보여주기 위함). 0개면 점 없음.
-// 우상단 "..." 버튼은 그 방의 설정 창(이름 수정 + 기기 ON/OFF 현황)을 연다.
+// 별도의 설정 버튼 없이 카드(회색 박스) 자체를 누르면 그 방의 설정 창이 열린다.
 function RoomCard({
   label,
   onCount,
   scale,
   cellSize,
-  onPress,
   onOpenSettings,
 }: {
   label: string;
   onCount: number;
   scale: number;
   cellSize: number;
-  onPress?: () => void;
   onOpenSettings: () => void;
 }) {
   return (
     <TouchableOpacity
       style={[styles.gridCell, styles.roomCard, { width: cellSize, height: cellSize }]}
-      onPress={onPress}
+      onPress={onOpenSettings}
       activeOpacity={0.8}
+      accessibilityLabel={`${label} 방 설정`}
     >
       {onCount > 0 && <View style={styles.activeDot} />}
-      <TouchableOpacity
-        style={styles.ellipsisWrap}
-        onPress={onOpenSettings}
-        hitSlop={10}
-        accessibilityLabel={`${label} 방 설정`}
-      >
-        <EllipsisIcon size={20 * scale} />
-      </TouchableOpacity>
       <Text style={[styles.roomLabel, { fontSize: 20 * scale }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-// "..." 버튼을 누르면 뜨는 방 설정 창 - 이름 수정 + 기기 ON/OFF 현황(자동/수동) + 방 삭제.
+// 방 카드(회색 박스)를 누르면 뜨는 방 설정 창 - 이름 수정 + 기기 ON/OFF 현황(자동/수동) + 방 삭제.
 // 기기별로 평소엔 "자동"(센서가 읽은 값을 그대로 표시, 직접 못 누름)이고, "수동"으로 바꾸면
 // 센서 고장 등으로 값을 믿을 수 없을 때 ON/OFF 배지를 직접 눌러 바꿀 수 있다.
 function RoomSettingsModal({
@@ -126,6 +76,8 @@ function RoomSettingsModal({
   onDelete,
   onToggleDeviceMode,
   onToggleDevicePower,
+  onDeleteDevice,
+  onAddDevice,
 }: {
   room: Room | null;
   onClose: () => void;
@@ -133,14 +85,18 @@ function RoomSettingsModal({
   onDelete: (id: string) => void;
   onToggleDeviceMode: (roomId: string, deviceName: string) => void;
   onToggleDevicePower: (roomId: string, deviceName: string) => void;
+  onDeleteDevice: (roomId: string, deviceName: string) => void;
+  onAddDevice: (roomId: string) => void;
 }) {
   const [nameInput, setNameInput] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDeleteDevice, setConfirmDeleteDevice] = useState<string | null>(null);
 
   useEffect(() => {
     if (room) {
       setNameInput(room.label);
       setConfirmDelete(false);
+      setConfirmDeleteDevice(null);
     }
   }, [room]);
 
@@ -154,6 +110,11 @@ function RoomSettingsModal({
   const handleConfirmDelete = () => {
     if (room) onDelete(room.id);
     onClose();
+  };
+
+  const handleConfirmDeleteDevice = () => {
+    if (room && confirmDeleteDevice) onDeleteDevice(room.id, confirmDeleteDevice);
+    setConfirmDeleteDevice(null);
   };
 
   return (
@@ -173,6 +134,27 @@ function RoomSettingsModal({
                   <Text style={styles.modalCloseText}>취소</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.deleteButton} onPress={handleConfirmDelete} activeOpacity={0.7}>
+                  <Text style={styles.deleteButtonText}>삭제</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : confirmDeleteDevice ? (
+            <>
+              <Text style={styles.modalTitle}>{confirmDeleteDevice} 기기를 삭제할까요?</Text>
+              <Text style={styles.confirmSubtitle}>삭제하면 되돌릴 수 없어요.</Text>
+              <View style={styles.modalBottomRow}>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setConfirmDeleteDevice(null)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.modalCloseText}>취소</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={handleConfirmDeleteDevice}
+                  activeOpacity={0.7}
+                >
                   <Text style={styles.deleteButtonText}>삭제</Text>
                 </TouchableOpacity>
               </View>
@@ -237,9 +219,27 @@ function RoomSettingsModal({
                         </Text>
                       </View>
                     )}
+
+                    <TouchableOpacity
+                      style={styles.deviceDeleteButton}
+                      onPress={() => setConfirmDeleteDevice(d.name)}
+                      hitSlop={8}
+                      activeOpacity={0.7}
+                      accessibilityLabel={`${d.name} 기기 삭제`}
+                    >
+                      <CloseIcon size={14} color={colors.textGray} />
+                    </TouchableOpacity>
                   </View>
                 </View>
               ))}
+
+              <TouchableOpacity
+                style={styles.addDeviceInModalButton}
+                onPress={() => room && onAddDevice(room.id)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.addDeviceInModalText}>기기 추가</Text>
+              </TouchableOpacity>
 
               <View style={styles.modalBottomRow}>
                 <TouchableOpacity
@@ -278,77 +278,109 @@ function AddRoomButton({ scale, cellSize, onPress }: { scale: number; cellSize: 
   );
 }
 
+// 방 카드의 "+" 버튼을 누르면 뜨는 창 - 그 방(room)에 등록할 기기 이름만 입력하면 되고,
+// 등록하면 바로 그 방의 기기 목록에 추가되어 방 설정 창에서 확인할 수 있다.
+function AddDeviceModal({
+  room,
+  onClose,
+  onSubmit,
+}: {
+  room: Room | null;
+  onClose: () => void;
+  onSubmit: (roomId: string, deviceName: string) => void;
+}) {
+  const [deviceName, setDeviceName] = useState('');
+
+  useEffect(() => {
+    if (room) setDeviceName('');
+  }, [room]);
+
+  const handleSubmit = () => {
+    if (!room || !deviceName.trim()) return;
+    onSubmit(room.id, deviceName.trim());
+    onClose();
+  };
+
+  return (
+    <Modal visible={!!room} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Text style={styles.modalTitle}>{room?.label}에 기기 추가</Text>
+
+          <View style={styles.renameRow}>
+            <TextInput
+              style={styles.renameInput}
+              value={deviceName}
+              onChangeText={setDeviceName}
+              onSubmitEditing={handleSubmit}
+              placeholder="기기 이름"
+              placeholderTextColor={colors.textGray}
+              returnKeyType="done"
+              autoFocus
+            />
+          </View>
+
+          <View style={styles.modalBottomRow}>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+              <Text style={styles.modalCloseText}>취소</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.renameSaveButtonWide} onPress={handleSubmit} activeOpacity={0.7}>
+              <Text style={styles.renameSaveText}>등록</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 export default function SmartHomeControlScreen() {
   const { height, width } = useWindowDimensions();
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
   // 정확히 정사각형이 되도록 %/aspectRatio 대신 실제 픽셀 크기를 계산해서 쓴다.
   const cellSize = (width - SCREEN_PADDING * 2 - GRID_GAP) / 2;
-  const [rooms, setRooms] = useState<Room[]>(initialRooms);
+  const {
+    rooms,
+    addRoom,
+    renameRoom,
+    deleteRoom,
+    addDevice,
+    deleteDevice,
+    toggleDeviceMode,
+    toggleDevicePower,
+  } = useRooms();
   const [settingsRoomId, setSettingsRoomId] = useState<string | null>(null);
+  const [addDeviceRoomId, setAddDeviceRoomId] = useState<string | null>(null);
 
   const activeCount = rooms.reduce(
     (sum, r) => sum + r.devices.filter((d) => d.on).length,
     0
   );
   const settingsRoom = rooms.find((r) => r.id === settingsRoomId) ?? null;
+  const addDeviceRoom = rooms.find((r) => r.id === addDeviceRoomId) ?? null;
 
-  const addRoom = () => {
-    if (rooms.length >= MAX_ROOMS) return;
-    setRooms([
-      ...rooms,
-      {
-        id: `room-${Date.now()}`,
-        label: `ROOM ${rooms.length + 1}`,
-        devices: defaultDevices(),
-      },
-    ]);
+  // 방 설정 창의 "기기 추가"를 누르면 호출된다. RN의 Modal은 두 개가 동시에 visible:true면
+  // (설정 창 + 기기 추가 창) 터치가 먹통이 되는 문제가 있어서, 기기 추가 창을 열기 전에
+  // 반드시 설정 창부터 닫는다 - 두 Modal이 함께 열려 있는 상태를 만들지 않기 위함.
+  const openAddDeviceFromSettings = (roomId: string) => {
+    setSettingsRoomId(null);
+    setAddDeviceRoomId(roomId);
   };
 
-  const renameRoom = (id: string, label: string) => {
-    setRooms(rooms.map((r) => (r.id === id ? { ...r, label } : r)));
-  };
-
-  const deleteRoom = (id: string) => {
-    setRooms(rooms.filter((r) => r.id !== id));
-  };
-
-  // 기기 하나의 자동/수동 모드를 토글한다. 수동으로 바뀌면 그때부터 on 값은 센서가 아니라
-  // 사용자가 아래 toggleDevicePower로 직접 정한다.
-  const toggleDeviceMode = (roomId: string, deviceName: string) => {
-    setRooms((prev) =>
-      prev.map((r) =>
-        r.id !== roomId
-          ? r
-          : {
-              ...r,
-              devices: r.devices.map((d) =>
-                d.name === deviceName ? { ...d, mode: d.mode === 'auto' ? 'manual' : 'auto' } : d
-              ),
-            }
-      )
-    );
-  };
-
-  // 수동 모드 기기의 ON/OFF를 직접 뒤집는다(자동 모드일 때는 배지가 눌리지 않으므로 호출되지 않음).
-  const toggleDevicePower = (roomId: string, deviceName: string) => {
-    setRooms((prev) =>
-      prev.map((r) =>
-        r.id !== roomId
-          ? r
-          : {
-              ...r,
-              devices: r.devices.map((d) => (d.name === deviceName ? { ...d, on: !d.on } : d)),
-            }
-      )
-    );
+  // 기기 추가 창을 닫을 때(취소/등록 모두) 원래 보고 있던 방의 설정 창으로 되돌아간다.
+  const closeAddDeviceModal = () => {
+    const roomId = addDeviceRoomId;
+    setAddDeviceRoomId(null);
+    if (roomId) setSettingsRoomId(roomId);
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={[styles.content, { paddingTop: 20 * scale }]}>
         <ActiveDevicesCard scale={scale} count={activeCount} />
+        <View style={{ height: 16 * scale }} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 * scale }}>
-          <View style={[styles.grid, { marginTop: 16 * scale, rowGap: GRID_GAP }]}>
+          <View style={[styles.grid, { rowGap: GRID_GAP }]}>
             {rooms.map((room) => (
               <RoomCard
                 key={room.id}
@@ -375,6 +407,13 @@ export default function SmartHomeControlScreen() {
         onDelete={deleteRoom}
         onToggleDeviceMode={toggleDeviceMode}
         onToggleDevicePower={toggleDevicePower}
+        onDeleteDevice={deleteDevice}
+        onAddDevice={openAddDeviceFromSettings}
+      />
+      <AddDeviceModal
+        room={addDeviceRoom}
+        onClose={closeAddDeviceModal}
+        onSubmit={addDevice}
       />
     </SafeAreaView>
   );
@@ -425,11 +464,6 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     backgroundColor: colors.green,
-  },
-  ellipsisWrap: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
   },
   roomLabel: {
     fontFamily: fonts.jalnan,
@@ -490,6 +524,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: colors.orange,
   },
+  renameSaveButtonWide: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.orange,
+  },
   renameSaveText: {
     fontFamily: fonts.jalnan,
     fontSize: 14,
@@ -518,6 +559,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  deviceDeleteButton: {
+    padding: 4,
+  },
+  // 방 설정 창의 기기 목록 아래에 놓이는 "기기 추가" 버튼 - 이 방에 바로 기기를 등록하는 창을 연다.
+  addDeviceInModalButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+  },
+  addDeviceInModalText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 14,
+    color: colors.textGray2,
   },
   // 기기별 자동/수동 전환 pill. 수동일 때만 강조색으로 바꿔서, 지금 "센서 대신 내가 직접
   // 정한 값"이라는 걸 한눈에 알아볼 수 있게 한다.

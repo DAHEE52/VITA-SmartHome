@@ -12,6 +12,10 @@ import SmartHomeControlScreen from '../screens/SmartHomeControlScreen';
 import EnergyUsageScreen from '../screens/EnergyUsageScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import EnergyTreeScreen from '../screens/EnergyTreeScreen';
+import GuidebookScreen from '../screens/GuidebookScreen';
+import BillReceiptScreen from '../screens/BillReceiptScreen';
+import FirePreventionScreen from '../screens/FirePreventionScreen';
+import SettingsScreen from '../screens/SettingsScreen';
 
 // 각 화면이 받는 파라미터 타입 정의. 전부 파라미터 없이 이동하므로 undefined.
 // 새 화면을 추가할 땐 여기 타입과 아래 <Stack.Screen> 둘 다 추가해야 함.
@@ -22,6 +26,10 @@ export type RootStackParamList = {
   EnergyUsage: undefined;
   Calendar: undefined;
   EnergyTree: undefined;
+  Guidebook: undefined;
+  BillReceipt: undefined;
+  FirePrevention: undefined;
+  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -41,6 +49,10 @@ export default function RootNavigator() {
         <Stack.Screen name="EnergyUsage" component={EnergyUsageScreen} />
         <Stack.Screen name="Calendar" component={CalendarScreen} />
         <Stack.Screen name="EnergyTree" component={EnergyTreeScreen} />
+        <Stack.Screen name="Guidebook" component={GuidebookScreen} />
+        <Stack.Screen name="BillReceipt" component={BillReceiptScreen} />
+        <Stack.Screen name="FirePrevention" component={FirePreventionScreen} />
+        <Stack.Screen name="Settings" component={SettingsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
