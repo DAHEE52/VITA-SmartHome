@@ -169,6 +169,35 @@ export function TreeIcon({ size = 40 }: { size?: number }) {
   );
 }
 
+// 에너지 나무 화면의 성장 단계 아이콘 - 새싹(가장 어림) → 어린 나무 → 나무(다 자람) 순.
+export function SproutIcon({ size = 40 }: { size?: number }) {
+  return (
+    <Image
+      source={require('../../UIUX/icon/12-새싹.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
+}
+export function SaplingIcon({ size = 40 }: { size?: number }) {
+  return (
+    <Image
+      source={require('../../UIUX/icon/13-어린 나무.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
+}
+export function GrownTreeIcon({ size = 40 }: { size?: number }) {
+  return (
+    <Image
+      source={require('../../UIUX/icon/14-나무.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
+}
+
 // 방/카드 우측 상단에 쓰이는 "..." 더보기 아이콘
 export function EllipsisIcon({ size = 24, color = colors.text }: IconProps) {
   return (

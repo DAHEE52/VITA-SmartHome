@@ -13,6 +13,7 @@ import { GoalProvider } from './src/context/GoalContext';
 import { RoomsProvider } from './src/context/RoomsContext';
 import { EnergyHistoryProvider } from './src/context/EnergyHistoryContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
+import { FireSafetyProvider } from './src/context/FireSafetyContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 
 // 네이티브 스플래시(앱 아이콘 로딩 화면)가 폰트 로딩 전에 자동으로 사라지지 않도록 유지시킨다.
@@ -44,9 +45,11 @@ export default function App() {
         <RoomsProvider>
           <EnergyHistoryProvider>
             <NotificationsProvider>
-              <SettingsProvider>
-                <RootNavigator />
-              </SettingsProvider>
+              <FireSafetyProvider>
+                <SettingsProvider>
+                  <RootNavigator />
+                </SettingsProvider>
+              </FireSafetyProvider>
             </NotificationsProvider>
           </EnergyHistoryProvider>
         </RoomsProvider>

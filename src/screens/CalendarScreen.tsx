@@ -4,7 +4,7 @@
 // 참고: "2026"·"7월" 큰 타이틀만 다른 화면과 같은 Jalnan 폰트를 쓰고,
 // 요일/날짜/DAILY·SPECIAL/일정 텍스트는 원본 시안에서 각지지 않은 깔끔한 굵은 고딕이라
 // 시스템 기본 폰트에 fontWeight만 bold로 줘서 구분했다.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,7 @@ import {
   Pressable,
   TextInput,
   ScrollView,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
+  PanResponder,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -47,7 +46,8 @@ const now = new Date();
 // "9:05" 같은 문자열을 0~23시/0~59분으로 파싱한다. 형식이 안 맞으면 0:00으로 취급.
 function parseTime(time: string): { hour: number; minute: number } {
   const match = time.match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return { hour: 0, minute: 0 };
+  // 아직 시간을 정하지 않은 새 일정은 12시(자정)가 아니라 1시부터 시작하도록 기본값을 둔다.
+  if (!match) return { hour: 1, minute: 0 };
   return {
     hour: Math.min(23, Math.max(0, Number(match[1]))),
     minute: Math.min(59, Math.max(0, Number(match[2]))),
@@ -321,40 +321,87 @@ const WHEEL_ITEM_HEIGHT = 40;
 const WHEEL_VISIBLE_COUNT = 3;
 const WHEEL_HEIGHT = WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_COUNT;
 
-// 세로로 스크롤해서 숫자 하나를 고르는 휠 - 가운데 칸에 걸린 값이 선택값이 된다(스냅 스크롤).
-// 위/아래에 패딩을 한 칸씩 둬서 첫 값과 마지막 값도 가운데까지 스크롤될 수 있게 한다.
+// 세로로 드래그해서 숫자 하나를 고르는 휠 - 가운데 칸에 걸린 값이 선택값이 된다.
+// 위/아래에 패딩을 한 칸씩 둬서 첫 값과 마지막 값도 가운데까지 올 수 있게 한다.
+//
+// 처음엔 ScrollView의 네이티브 스크롤(스와이프/휠)에 맡겼는데, 웹에서 무엇 때문인지 터치·마우스
+// 드래그가 실제 스크롤로 이어지지 않는 문제가 있었다(scrollTo()로 좌표를 직접 옮기는 건 정상 동작 -
+// 즉 네이티브 "드래그로 스크롤" 제스처 인식 쪽만 막혀 있었다). 그래서 ScrollView의 자체 스크롤
+// 제스처는 꺼두고(scrollEnabled=false), PanResponder로 드래그를 직접 추적해 scrollTo()를 우리가
+// 호출하는 방식으로 바꿨다 - 플랫폼에 상관없이 항상 동작한다.
 function DigitWheel({ value, options, onChange }: { value: number; options: number[]; onChange: (v: number) => void }) {
   const scrollRef = useRef<ScrollView>(null);
   const isMounted = useRef(false);
+  const currentOffsetRef = useRef(0); // scrollTo()로 마지막에 옮겨둔 y값(픽셀)
+  const dragStartOffsetRef = useRef(0); // 드래그 시작 시점의 y값
+
+  // PanResponder는 useRef로 딱 한 번만 만들어지므로, 그 안의 콜백이 value/options/onChange를
+  // 직접 참조하면 "처음 마운트됐을 때의" 값에 영원히 갇혀버린다(분의 일의 자리를 바꾼 뒤 십의
+  // 자리를 바꾸면 일의 자리가 마운트 시점 값으로 되돌아가던 오류의 원인). 그래서 항상 최신 값을
+  // 담아두는 ref를 따로 두고, 콜백은 렌더와 무관하게 이 ref들만 통해서 최신 값을 읽는다.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     const index = Math.max(0, options.indexOf(value));
-    scrollRef.current?.scrollTo({ y: index * WHEEL_ITEM_HEIGHT, animated: isMounted.current });
+    const target = index * WHEEL_ITEM_HEIGHT;
+    scrollRef.current?.scrollTo({ y: target, animated: isMounted.current });
+    currentOffsetRef.current = target;
     isMounted.current = true;
   }, [value, options]);
 
-  const handleSnap = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const rawIndex = e.nativeEvent.contentOffset.y / WHEEL_ITEM_HEIGHT;
-    const index = Math.max(0, Math.min(options.length - 1, Math.round(rawIndex)));
-    scrollRef.current?.scrollTo({ y: index * WHEEL_ITEM_HEIGHT, animated: true });
-    if (options[index] !== value) onChange(options[index]);
-  };
+  const snapTo = useCallback((rawY: number) => {
+    const opts = optionsRef.current;
+    const clampedRaw = Math.max(0, Math.min((opts.length - 1) * WHEEL_ITEM_HEIGHT, rawY));
+    const index = Math.max(0, Math.min(opts.length - 1, Math.round(clampedRaw / WHEEL_ITEM_HEIGHT)));
+    const snapped = index * WHEEL_ITEM_HEIGHT;
+    scrollRef.current?.scrollTo({ y: snapped, animated: true });
+    currentOffsetRef.current = snapped;
+    if (opts[index] !== valueRef.current) onChangeRef.current(opts[index]);
+  }, []);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gesture) => Math.abs(gesture.dy) > 2,
+      onPanResponderGrant: () => {
+        dragStartOffsetRef.current = currentOffsetRef.current;
+      },
+      onPanResponderMove: (_evt, gesture) => {
+        const rawY = dragStartOffsetRef.current - gesture.dy;
+        const opts = optionsRef.current;
+        const clamped = Math.max(0, Math.min((opts.length - 1) * WHEEL_ITEM_HEIGHT, rawY));
+        scrollRef.current?.scrollTo({ y: clamped, animated: false });
+        currentOffsetRef.current = clamped;
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        snapTo(dragStartOffsetRef.current - gesture.dy);
+      },
+      onPanResponderTerminate: (_evt, gesture) => {
+        snapTo(dragStartOffsetRef.current - gesture.dy);
+      },
+    })
+  ).current;
 
   return (
-    <View style={styles.wheelContainer}>
+    <View style={styles.wheelContainer} {...panResponder.panHandlers}>
       <View style={styles.wheelSelectionBar} pointerEvents="none" />
       <ScrollView
         ref={scrollRef}
+        style={styles.wheelScrollView}
+        scrollEnabled={false}
         showsVerticalScrollIndicator={false}
-        snapToInterval={WHEEL_ITEM_HEIGHT}
-        decelerationRate="fast"
-        onMomentumScrollEnd={handleSnap}
-        onScrollEndDrag={handleSnap}
         contentContainerStyle={{ paddingVertical: WHEEL_ITEM_HEIGHT }}
       >
         {options.map((opt) => (
           <View key={opt} style={styles.wheelItem}>
-            <Text style={styles.wheelDigitText}>{opt}</Text>
+            <Text style={styles.wheelDigitText} selectable={false}>
+              {opt}
+            </Text>
           </View>
         ))}
       </ScrollView>
@@ -1065,6 +1112,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: WHEEL_HEIGHT,
     overflow: 'hidden',
+  },
+  // ScrollView 자체의 뷰포트 높이를 콘텐츠보다 작게 고정해야 실제로 스크롤할 내용이 생긴다 -
+  // contentContainerStyle만으로는 ScrollView 자신의 크기가 내용물 높이에 맞춰져 스크롤이 안 됐다.
+  wheelScrollView: {
+    height: WHEEL_HEIGHT,
   },
   // 휠 가운데 줄(선택 슬롯)을 표시하는 배경 바 - 스크롤 내용 뒤에 고정으로 깔린다.
   wheelSelectionBar: {

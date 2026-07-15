@@ -28,6 +28,7 @@ type NotificationsContextValue = {
   unreadCount: number;
   markAsRead: (id: string) => void;
   deleteNotification: (id: string) => void;
+  pushNotification: (title: string, message: string) => void;
 };
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
@@ -46,8 +47,18 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setNotifications((prev) => prev.filter((n) => !(n.id === id && n.read)));
   };
 
+  // 화재 예방 시스템의 자동 차단 등, 앱이 스스로 만들어내는 알림을 목록 맨 앞에 안읽음 상태로 추가한다.
+  const pushNotification = (title: string, message: string) => {
+    setNotifications((prev) => [
+      { id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title, message, time: '방금 전', read: false },
+      ...prev,
+    ]);
+  };
+
   return (
-    <NotificationsContext.Provider value={{ notifications, unreadCount, markAsRead, deleteNotification }}>
+    <NotificationsContext.Provider
+      value={{ notifications, unreadCount, markAsRead, deleteNotification, pushNotification }}
+    >
       {children}
     </NotificationsContext.Provider>
   );

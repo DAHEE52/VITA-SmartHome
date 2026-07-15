@@ -7,7 +7,9 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 // mode: 'auto'면 센서가 읽은 전원 상태(on)를 그대로 보여주기만 하고, 'manual'이면 센서 고장 등에
 // 대비해 사용자가 직접 on/off를 지정한 값이다. 평소엔 전부 'auto'로 시작한다.
 export type DeviceMode = 'auto' | 'manual';
-export type Device = { name: string; on: boolean; mode: DeviceMode };
+// onSince: 이 기기가 마지막으로 켜진 시각(ms, Date.now()) - 꺼져 있으면 null.
+// 화재 예방 시스템(FireSafetyContext)이 "이 기기가 얼마나 오래 계속 켜져 있었는지" 판단하는 데 쓴다.
+export type Device = { name: string; on: boolean; mode: DeviceMode; onSince: number | null };
 export type Room = { id: string; label: string; devices: Device[] };
 
 export const MAX_ROOMS = 12; // "+" 버튼으로 추가할 수 있는 방의 최대 개수
@@ -29,6 +31,7 @@ type RoomsContextValue = {
   deleteDevice: (roomId: string, deviceName: string) => void;
   toggleDeviceMode: (roomId: string, deviceName: string) => void;
   toggleDevicePower: (roomId: string, deviceName: string) => void;
+  forceOffDevice: (roomId: string, deviceName: string) => void;
 };
 
 const RoomsContext = createContext<RoomsContextValue | null>(null);
@@ -55,7 +58,9 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   const addDevice = (roomId: string, deviceName: string) => {
     setRooms((prev) =>
       prev.map((r) =>
-        r.id !== roomId ? r : { ...r, devices: [...r.devices, { name: deviceName, on: false, mode: 'auto' }] }
+        r.id !== roomId
+          ? r
+          : { ...r, devices: [...r.devices, { name: deviceName, on: false, mode: 'auto', onSince: null }] }
       )
     );
   };
@@ -85,19 +90,53 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   };
 
   // 수동 모드 기기의 ON/OFF를 직접 뒤집는다(자동 모드일 때는 배지가 눌리지 않으므로 호출되지 않음).
+  // 켜질 때 onSince를 기록하고, 꺼지면 지운다 - 화재 예방 시스템이 "얼마나 오래 켜져 있었는지" 재는 기준.
   const toggleDevicePower = (roomId: string, deviceName: string) => {
     setRooms((prev) =>
       prev.map((r) =>
         r.id !== roomId
           ? r
-          : { ...r, devices: r.devices.map((d) => (d.name === deviceName ? { ...d, on: !d.on } : d)) }
+          : {
+              ...r,
+              devices: r.devices.map((d) =>
+                d.name === deviceName ? { ...d, on: !d.on, onSince: !d.on ? Date.now() : null } : d
+              ),
+            }
+      )
+    );
+  };
+
+  // 화재 예방 시스템이 이상 패턴을 감지했을 때 자동으로 전원을 차단할 때 쓴다(사용자가 누른
+  // toggleDevicePower와 구분되는, 시스템이 직접 개입하는 조치). mode도 'manual'로 바꿔서 자동 조치로
+  // 꺼졌다는 걸 방 설정 화면에서도 알 수 있게 한다.
+  const forceOffDevice = (roomId: string, deviceName: string) => {
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id !== roomId
+          ? r
+          : {
+              ...r,
+              devices: r.devices.map((d) =>
+                d.name === deviceName ? { ...d, on: false, onSince: null, mode: 'manual' } : d
+              ),
+            }
       )
     );
   };
 
   return (
     <RoomsContext.Provider
-      value={{ rooms, addRoom, renameRoom, deleteRoom, addDevice, deleteDevice, toggleDeviceMode, toggleDevicePower }}
+      value={{
+        rooms,
+        addRoom,
+        renameRoom,
+        deleteRoom,
+        addDevice,
+        deleteDevice,
+        toggleDeviceMode,
+        toggleDevicePower,
+        forceOffDevice,
+      }}
     >
       {children}
     </RoomsContext.Provider>
