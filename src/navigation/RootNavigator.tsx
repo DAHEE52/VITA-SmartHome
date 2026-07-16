@@ -16,6 +16,7 @@ import GuidebookScreen from '../screens/GuidebookScreen';
 import BillReceiptScreen from '../screens/BillReceiptScreen';
 import FirePreventionScreen from '../screens/FirePreventionScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import AutomationScreen from '../screens/AutomationScreen';
 
 // 각 화면이 받는 파라미터 타입 정의. 전부 파라미터 없이 이동하므로 undefined.
 // 새 화면을 추가할 땐 여기 타입과 아래 <Stack.Screen> 둘 다 추가해야 함.
@@ -30,6 +31,7 @@ export type RootStackParamList = {
   BillReceipt: undefined;
   FirePrevention: undefined;
   Settings: undefined;
+  Automation: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -53,6 +55,7 @@ export default function RootNavigator() {
         <Stack.Screen name="BillReceipt" component={BillReceiptScreen} />
         <Stack.Screen name="FirePrevention" component={FirePreventionScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
+        <Stack.Screen name="Automation" component={AutomationScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

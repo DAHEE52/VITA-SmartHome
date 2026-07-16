@@ -2,13 +2,18 @@
 // 구조: 긴급 경보 카드(있을 때만) / 전체 요약 카드 / AI 이상 패턴 감지 현황 / 방별 상태 카드
 //      / 자동 대응 기록 / 하단 네비(홈)
 //
-// 실제 화재/연기 센서나 학습된 모델은 없다. 위험도(안전/주의/위험)는 RoomsContext의 실제 방·기기
-// on/off 상태를 기준으로 시뮬레이션하고("화재가 자주 발생하는 원인"에 나온 기기가 켜져 있으면 위험,
-// 고전력 기기 동시 사용은 주의), "AI 이상 패턴 감지"는 기기가 종류별 정상 지속시간(fireRisk.ts)보다
-// 오래 켜져 있는지를 실시간으로 감시한다(FireSafetyContext, 화면을 안 보고 있어도 계속 동작). 이상이
-// 감지되면 그 즉시 전원을 자동 차단하고 알림을 보내며, 고위험 기기면 이 화면에 119 신고 안내가 뜬다.
-// 실제로 전화를 자동으로 걸 수는 없어서(운영체제가 막음), "119 신고" 버튼은 전화 앱을 119가 입력된
-// 채로 열어줄 뿐 - 실제 발신은 사용자가 통화 버튼을 눌러야 이뤄진다.
+// 위험도(안전/주의/위험)는 두 갈래를 합쳐서 판단한다.
+// 1) 기기 사용 패턴: RoomsContext의 실제 방·기기 on/off 상태 기준("화재가 자주 발생하는 원인"에 나온
+//    기기가 켜져 있으면 위험, 고전력 기기 동시 사용은 주의) + 종류별 정상 지속시간(fireRisk.ts)보다
+//    오래 켜져 있으면 "AI 이상 패턴 감지".
+// 2) 온도/습도 센서: SensorContext가 내놓는 값 기준(고온이면 위험). 아직 실제 센서가 연결되지 않아
+//    지금은 더미 값으로 채워지고 있고, 방 카드의 "화재 상황 시뮬레이션" 버튼으로 위험 범위 값을 직접
+//    만들어 감지 흐름을 확인해볼 수 있다. 나중에 실제 센서가 붙으면 SensorContext 내부만 교체하면
+//    되고, 이 화면과 판정 로직은 그대로 쓸 수 있다.
+// 위 둘 중 하나라도 위험이 감지되면(고위험 기기 이상 패턴, 또는 고온 센서) 전원을 자동 차단하고
+// 알림을 보내며, 이 화면에 119 신고 안내가 뜬다. 실제로 전화를 자동으로 걸 수는 없어서(운영체제가
+// 막음), "119 신고" 버튼은 전화 앱을 119가 입력된 채로 열어줄 뿐 - 실제 발신은 사용자가 통화 버튼을
+// 눌러야 이뤄진다.
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,8 +23,16 @@ import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import { useRooms, Room, Device } from '../context/RoomsContext';
 import { useFireSafety } from '../context/FireSafetyContext';
+import { useSensors } from '../context/SensorContext';
 import { estimateWattage } from '../utils/energy';
-import { getNormalDurationMs, isHighRiskDevice, HIGH_RISK_KEYWORDS } from '../utils/fireRisk';
+import {
+  getNormalDurationMs,
+  isHighRiskDevice,
+  HIGH_RISK_KEYWORDS,
+  sensorRiskLevel,
+  RoomSensorReading,
+  SENSOR_CAUTION_TEMP_C,
+} from '../utils/fireRisk';
 
 const SCREEN_PADDING = 20;
 
@@ -34,7 +47,10 @@ const RISK_META: Record<RiskLevel, { label: string; color: string }> = {
   danger: { label: '위험', color: colors.red },
 };
 
-function getRoomRisk(room: Room): { level: RiskLevel; reason: string | null } {
+const RISK_RANK: Record<RiskLevel, number> = { safe: 0, caution: 1, danger: 2 };
+
+// 기기 사용 패턴만 근거로 한 위험도(기존 로직).
+function getDeviceRisk(room: Room): { level: RiskLevel; reason: string | null } {
   const onDevices = room.devices.filter((d) => d.on);
   const dangerDevice = onDevices.find((d) => isHighRiskDevice(d.name));
   if (dangerDevice) {
@@ -49,6 +65,29 @@ function getRoomRisk(room: Room): { level: RiskLevel; reason: string | null } {
   return { level: 'safe', reason: null };
 }
 
+// 센서 값만 근거로 한 위험도 + 이유 문구.
+function getSensorRisk(sensor: RoomSensorReading | undefined): { level: RiskLevel; reason: string | null } {
+  const level = sensorRiskLevel(sensor);
+  if (level === 'safe' || !sensor) return { level: 'safe', reason: null };
+  if (level === 'danger') {
+    return { level, reason: `온도가 비정상적으로 높아요 (${sensor.temperatureC}°C).` };
+  }
+  return {
+    level,
+    reason:
+      sensor.temperatureC >= SENSOR_CAUTION_TEMP_C
+        ? `온도가 평소보다 높아요 (${sensor.temperatureC}°C).`
+        : `습도가 낮아요 (${sensor.humidityPct}%). 건조한 환경은 화재에 취약해요.`,
+  };
+}
+
+// 기기 사용 패턴 위험도와 센서 위험도 중 더 심각한 쪽을 그 방의 최종 위험도로 삼는다.
+function getRoomRisk(room: Room, sensor: RoomSensorReading | undefined): { level: RiskLevel; reason: string | null } {
+  const deviceRisk = getDeviceRisk(room);
+  const sensorRisk = getSensorRisk(sensor);
+  return RISK_RANK[sensorRisk.level] >= RISK_RANK[deviceRisk.level] ? sensorRisk : deviceRisk;
+}
+
 function formatDuration(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const m = Math.floor(totalSec / 60);
@@ -58,15 +97,7 @@ function formatDuration(ms: number): string {
 
 // 긴급 경보 카드 - 고위험 기기의 이상 패턴(장시간 방치)이 감지됐을 때만 뜬다.
 // "119 신고"는 전화 앱을 119가 입력된 채로 열어줄 뿐이고, 실제 발신은 사용자가 통화 버튼을 눌러야 한다.
-function EmergencyBanner({
-  roomLabel,
-  deviceName,
-  onDismiss,
-}: {
-  roomLabel: string;
-  deviceName: string;
-  onDismiss: () => void;
-}) {
+function EmergencyBanner({ reason, onDismiss }: { reason: string; onDismiss: () => void }) {
   const callEmergency = () => {
     Linking.openURL('tel:119');
   };
@@ -74,9 +105,7 @@ function EmergencyBanner({
   return (
     <Card style={styles.emergencyCard}>
       <Text style={styles.emergencyTitle}>🚨 화재 위험 감지</Text>
-      <Text style={styles.emergencyBody}>
-        {roomLabel}의 "{deviceName}"에서 장시간 방치로 인한 화재 위험이 감지되어 전원을 자동 차단했어요.
-      </Text>
+      <Text style={styles.emergencyBody}>{reason}</Text>
       <TouchableOpacity style={styles.emergencyCallButton} onPress={callEmergency} activeOpacity={0.7}>
         <Text style={styles.emergencyCallButtonText}>📞 119 신고하기</Text>
       </TouchableOpacity>
@@ -122,8 +151,18 @@ function AnomalyRow({ room, device, now }: { room: string; device: Device; now: 
   );
 }
 
-function RoomRiskCard({ room }: { room: Room }) {
-  const { level, reason } = getRoomRisk(room);
+function RoomRiskCard({
+  room,
+  sensor,
+  isSimulating,
+  onToggleSimulate,
+}: {
+  room: Room;
+  sensor: RoomSensorReading | undefined;
+  isSimulating: boolean;
+  onToggleSimulate: () => void;
+}) {
+  const { level, reason } = getRoomRisk(room, sensor);
   const meta = RISK_META[level];
   const onDevices = room.devices.filter((d) => d.on);
 
@@ -136,11 +175,27 @@ function RoomRiskCard({ room }: { room: Room }) {
         </View>
       </View>
 
+      {sensor && (
+        <Text style={styles.sensorReadingText}>
+          🌡 {sensor.temperatureC}°C · 💧 {sensor.humidityPct}%
+        </Text>
+      )}
+
       {reason && <Text style={styles.reasonText}>{reason}</Text>}
 
       <Text style={styles.deviceSummary}>
         {onDevices.length > 0 ? `켜진 기기: ${onDevices.map((d) => d.name).join(', ')}` : '켜진 기기가 없어요.'}
       </Text>
+
+      <TouchableOpacity
+        style={[styles.simulateButton, isSimulating && styles.simulateButtonActive]}
+        onPress={onToggleSimulate}
+        activeOpacity={0.7}
+      >
+        <Text style={[styles.simulateButtonText, isSimulating && styles.simulateButtonTextActive]}>
+          {isSimulating ? '화재 상황 시뮬레이션 해제' : '화재 상황 시뮬레이션 (테스트)'}
+        </Text>
+      </TouchableOpacity>
     </Card>
   );
 }
@@ -148,6 +203,7 @@ function RoomRiskCard({ room }: { room: Room }) {
 export default function FirePreventionScreen() {
   const { rooms } = useRooms();
   const { autoActions, emergency, dismissEmergency } = useFireSafety();
+  const { readings, isSimulatingFire, simulateFire, clearSimulation } = useSensors();
   const [now, setNow] = useState(() => Date.now());
 
   // 경과 시간 표시를 1초마다 갱신한다(실제 감시/자동 차단은 FireSafetyContext가 화면과 무관하게 처리).
@@ -156,7 +212,7 @@ export default function FirePreventionScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  const risks = rooms.map((room) => ({ room, risk: getRoomRisk(room) }));
+  const risks = rooms.map((room) => ({ room, risk: getRoomRisk(room, readings[room.id]) }));
   const dangerCount = risks.filter((r) => r.risk.level === 'danger').length;
   const cautionCount = risks.filter((r) => r.risk.level === 'caution').length;
 
@@ -177,13 +233,7 @@ export default function FirePreventionScreen() {
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false}>
-        {emergency && (
-          <EmergencyBanner
-            roomLabel={emergency.roomLabel}
-            deviceName={emergency.deviceName}
-            onDismiss={dismissEmergency}
-          />
-        )}
+        {emergency && <EmergencyBanner reason={emergency.reason} onDismiss={dismissEmergency} />}
 
         <Card style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>전체 상태</Text>
@@ -208,8 +258,22 @@ export default function FirePreventionScreen() {
         </Card>
 
         <Text style={styles.sectionTitle}>방별 화재 감지 센서</Text>
+        <Text style={styles.sectionHint}>
+          방마다 온도·습도 센서 값을 보여줘요. 아직 실제 센서가 연결되지 않아 지금은 더미 값으로
+          채워지고 있고, 실제 센서가 연동되면 이 값이 그대로 실제 값으로 바뀌어요.
+        </Text>
         {rooms.length > 0 ? (
-          rooms.map((room) => <RoomRiskCard key={room.id} room={room} />)
+          rooms.map((room) => (
+            <RoomRiskCard
+              key={room.id}
+              room={room}
+              sensor={readings[room.id]}
+              isSimulating={isSimulatingFire(room.id)}
+              onToggleSimulate={() =>
+                isSimulatingFire(room.id) ? clearSimulation(room.id) : simulateFire(room.id)
+              }
+            />
+          ))
         ) : (
           <Text style={styles.emptyHint}>등록된 방이 없어요.</Text>
         )}
@@ -229,9 +293,9 @@ export default function FirePreventionScreen() {
         </Card>
 
         <Text style={styles.disclaimer}>
-          실제 화재/연기 센서나 학습된 AI 모델과 연동된 값이 아니라, 등록된 기기의 사용 현황을 기준으로
-          위험도를 추정한 시뮬레이션이에요. 119 신고 버튼은 전화 앱을 열어줄 뿐, 실제 발신은 직접
-          눌러야 해요.
+          온도·습도 값은 아직 실제 센서가 연결되지 않아 더미 데이터로 시뮬레이션돼요. 학습된 AI 모델과
+          연동된 값도 아니고, 등록된 기기의 사용 현황·더미 센서 값을 기준으로 위험도를 추정해요. 119
+          신고 버튼은 전화 앱을 열어줄 뿐, 실제 발신은 직접 눌러야 해요.
         </Text>
       </ScrollView>
 
@@ -405,6 +469,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.white,
   },
+  sensorReadingText: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+  },
   reasonText: {
     marginTop: 8,
     fontSize: 13,
@@ -415,6 +485,24 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 12,
     color: colors.textGray,
+  },
+  simulateButton: {
+    alignItems: 'center',
+    marginTop: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+  },
+  simulateButtonActive: {
+    backgroundColor: colors.red,
+  },
+  simulateButtonText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 12,
+    color: colors.textGray2,
+  },
+  simulateButtonTextActive: {
+    color: colors.white,
   },
   emptyHint: {
     fontSize: 13,

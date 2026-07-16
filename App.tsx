@@ -15,6 +15,10 @@ import { EnergyHistoryProvider } from './src/context/EnergyHistoryContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
 import { FireSafetyProvider } from './src/context/FireSafetyContext';
 import { SettingsProvider } from './src/context/SettingsContext';
+import { CalendarProvider } from './src/context/CalendarContext';
+import { PresenceProvider } from './src/context/PresenceContext';
+import { AutomationProvider } from './src/context/AutomationContext';
+import { SensorProvider } from './src/context/SensorContext';
 
 // 네이티브 스플래시(앱 아이콘 로딩 화면)가 폰트 로딩 전에 자동으로 사라지지 않도록 유지시킨다.
 SplashScreenModule.preventAutoHideAsync().catch(() => {});
@@ -45,11 +49,19 @@ export default function App() {
         <RoomsProvider>
           <EnergyHistoryProvider>
             <NotificationsProvider>
-              <FireSafetyProvider>
-                <SettingsProvider>
-                  <RootNavigator />
-                </SettingsProvider>
-              </FireSafetyProvider>
+              <CalendarProvider>
+                <PresenceProvider>
+                  <AutomationProvider>
+                    <SensorProvider>
+                      <FireSafetyProvider>
+                        <SettingsProvider>
+                          <RootNavigator />
+                        </SettingsProvider>
+                      </FireSafetyProvider>
+                    </SensorProvider>
+                  </AutomationProvider>
+                </PresenceProvider>
+              </CalendarProvider>
             </NotificationsProvider>
           </EnergyHistoryProvider>
         </RoomsProvider>

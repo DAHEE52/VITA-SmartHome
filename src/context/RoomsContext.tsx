@@ -10,16 +10,19 @@ export type DeviceMode = 'auto' | 'manual';
 // onSince: 이 기기가 마지막으로 켜진 시각(ms, Date.now()) - 꺼져 있으면 null.
 // 화재 예방 시스템(FireSafetyContext)이 "이 기기가 얼마나 오래 계속 켜져 있었는지" 판단하는 데 쓴다.
 export type Device = { name: string; on: boolean; mode: DeviceMode; onSince: number | null };
-export type Room = { id: string; label: string; devices: Device[] };
+// targetTemp: 이 방의 목표 온도(°C) - 사용자가 방 설정에서 직접 조정하거나, 자동화 규칙
+// (AutomationContext)이 외출/외박/루틴 일정에 맞춰 자동으로 바꿀 수 있다.
+export type Room = { id: string; label: string; devices: Device[]; targetTemp: number };
 
 export const MAX_ROOMS = 12; // "+" 버튼으로 추가할 수 있는 방의 최대 개수
+const DEFAULT_TARGET_TEMP = 24;
 
 // 초기 방 목록. 기기는 전부 등록되지 않은 상태(빈 목록)로 초기화하고, 방 설정 창의 "기기 추가"로
 // 사용자가 직접 등록해야만 각 방에 기기가 나타난다.
 const initialRooms: Room[] = [
-  { id: 'room-1', label: 'ROOM 1', devices: [] },
-  { id: 'room-2', label: 'ROOM 2', devices: [] },
-  { id: 'room-3', label: 'ROOM 3', devices: [] },
+  { id: 'room-1', label: 'ROOM 1', devices: [], targetTemp: DEFAULT_TARGET_TEMP },
+  { id: 'room-2', label: 'ROOM 2', devices: [], targetTemp: DEFAULT_TARGET_TEMP },
+  { id: 'room-3', label: 'ROOM 3', devices: [], targetTemp: DEFAULT_TARGET_TEMP },
 ];
 
 type RoomsContextValue = {
@@ -31,7 +34,10 @@ type RoomsContextValue = {
   deleteDevice: (roomId: string, deviceName: string) => void;
   toggleDeviceMode: (roomId: string, deviceName: string) => void;
   toggleDevicePower: (roomId: string, deviceName: string) => void;
+  setDevicePower: (roomId: string, deviceName: string, on: boolean) => void;
   forceOffDevice: (roomId: string, deviceName: string) => void;
+  forceOffRoom: (roomId: string) => void;
+  setRoomTargetTemp: (roomId: string, temp: number) => void;
 };
 
 const RoomsContext = createContext<RoomsContextValue | null>(null);
@@ -42,7 +48,10 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   const addRoom = () => {
     setRooms((prev) => {
       if (prev.length >= MAX_ROOMS) return prev;
-      return [...prev, { id: `room-${Date.now()}`, label: `ROOM ${prev.length + 1}`, devices: [] }];
+      return [
+        ...prev,
+        { id: `room-${Date.now()}`, label: `ROOM ${prev.length + 1}`, devices: [], targetTemp: DEFAULT_TARGET_TEMP },
+      ];
     });
   };
 
@@ -106,6 +115,23 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  // 자동화 규칙(AutomationContext)이 외출/외박/루틴 일정에 맞춰 기기를 명시적으로 켜고 끌 때 쓴다.
+  // toggleDevicePower와 달리 on 값을 직접 지정하고, mode는 건드리지 않는다(기존 자동/수동 의미 유지).
+  const setDevicePower = (roomId: string, deviceName: string, on: boolean) => {
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id !== roomId
+          ? r
+          : {
+              ...r,
+              devices: r.devices.map((d) =>
+                d.name === deviceName ? { ...d, on, onSince: on ? Date.now() : null } : d
+              ),
+            }
+      )
+    );
+  };
+
   // 화재 예방 시스템이 이상 패턴을 감지했을 때 자동으로 전원을 차단할 때 쓴다(사용자가 누른
   // toggleDevicePower와 구분되는, 시스템이 직접 개입하는 조치). mode도 'manual'로 바꿔서 자동 조치로
   // 꺼졌다는 걸 방 설정 화면에서도 알 수 있게 한다.
@@ -124,6 +150,23 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  // 고온 감지 등 방 전체가 위험하다고 판단됐을 때, 특정 기기 하나가 아니라 그 방의 모든 기기를
+  // 한 번에 차단한다(어떤 기기가 원인인지 특정할 수 없는 센서 기반 감지에 쓴다).
+  const forceOffRoom = (roomId: string) => {
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id !== roomId
+          ? r
+          : { ...r, devices: r.devices.map((d) => ({ ...d, on: false, onSince: null, mode: 'manual' as const })) }
+      )
+    );
+  };
+
+  // 방의 목표 온도를 지정한다(사용자가 방 설정에서 직접, 또는 자동화 규칙이 자동으로).
+  const setRoomTargetTemp = (roomId: string, temp: number) => {
+    setRooms((prev) => prev.map((r) => (r.id !== roomId ? r : { ...r, targetTemp: temp })));
+  };
+
   return (
     <RoomsContext.Provider
       value={{
@@ -135,7 +178,10 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
         deleteDevice,
         toggleDeviceMode,
         toggleDevicePower,
+        setDevicePower,
         forceOffDevice,
+        forceOffRoom,
+        setRoomTargetTemp,
       }}
     >
       {children}

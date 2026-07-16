@@ -6,7 +6,7 @@ import { Modal, Pressable, View, Text, Image, TouchableOpacity, StyleSheet } fro
 import { useNavigation } from '@react-navigation/native';
 
 import { colors, fonts } from '../theme/colors';
-import { RemoteIcon, CalendarIcon, ChartUpIcon, TreeIcon } from './icons';
+import { RemoteIcon, CalendarIcon, ChartUpIcon, TreeIcon, AutomationIcon, GearIcon } from './icons';
 
 type MenuItem = {
   key: string;
@@ -18,7 +18,18 @@ type MenuItem = {
 const ICON_SIZE = 26;
 
 const MENU_ITEMS: MenuItem[] = [
-  { key: 'home', label: '홈', route: 'Main', renderIcon: () => <Text style={styles.itemEmoji}>🏠</Text> },
+  {
+    key: 'home',
+    label: '홈',
+    route: 'Main',
+    renderIcon: () => (
+      <Image
+        source={require('../../assets/icons/5-home.png')}
+        style={{ width: ICON_SIZE, height: ICON_SIZE }}
+        resizeMode="contain"
+      />
+    ),
+  },
   {
     key: 'smarthome',
     label: '스마트홈 제어',
@@ -26,6 +37,12 @@ const MENU_ITEMS: MenuItem[] = [
     renderIcon: () => <RemoteIcon size={ICON_SIZE} />,
   },
   { key: 'calendar', label: '캘린더', route: 'Calendar', renderIcon: () => <CalendarIcon size={ICON_SIZE} /> },
+  {
+    key: 'automation',
+    label: '자동화 규칙',
+    route: 'Automation',
+    renderIcon: () => <AutomationIcon size={ICON_SIZE} />,
+  },
   {
     key: 'energy',
     label: '에너지 사용량',
@@ -39,7 +56,7 @@ const MENU_ITEMS: MenuItem[] = [
     route: 'FirePrevention',
     renderIcon: () => (
       <Image
-        source={require('../../UIUX/icon/4-비상벨.png')}
+        source={require('../../assets/icons/4-emergency-bell.png')}
         style={{ width: ICON_SIZE, height: ICON_SIZE }}
         resizeMode="contain"
       />
@@ -51,7 +68,7 @@ const MENU_ITEMS: MenuItem[] = [
     route: 'Guidebook',
     renderIcon: () => (
       <Image
-        source={require('../../UIUX/icon/11-가이드북.png')}
+        source={require('../../assets/icons/8-guidebook.png')}
         style={{ width: ICON_SIZE, height: ICON_SIZE }}
         resizeMode="contain"
       />
@@ -63,7 +80,7 @@ const MENU_ITEMS: MenuItem[] = [
     route: 'BillReceipt',
     renderIcon: () => (
       <Image
-        source={require('../../UIUX/icon/10-영수증.png')}
+        source={require('../../assets/icons/7-receipt.png')}
         style={{ width: ICON_SIZE, height: ICON_SIZE }}
         resizeMode="contain"
       />
@@ -73,7 +90,7 @@ const MENU_ITEMS: MenuItem[] = [
     key: 'settings',
     label: '설정',
     route: 'Settings',
-    renderIcon: () => <Text style={styles.itemEmoji}>⚙️</Text>,
+    renderIcon: () => <GearIcon size={ICON_SIZE} />,
   },
 ];
 
@@ -144,9 +161,6 @@ const styles = StyleSheet.create({
     width: 32,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  itemEmoji: {
-    fontSize: 24,
   },
   rowLabel: {
     fontFamily: fonts.jalnan,

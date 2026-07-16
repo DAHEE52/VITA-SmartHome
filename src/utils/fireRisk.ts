@@ -39,3 +39,31 @@ export function isAnomalousDevice(device: { on: boolean; onSince: number | null;
   if (!device.on || device.onSince == null) return false;
   return now - device.onSince > getNormalDurationMs(device.name);
 }
+
+// 방 하나의 온도/습도 센서 값 한 세트. 지금은 SensorContext가 더미 값으로 채우지만, 나중에 실제
+// 센서(하드웨어/API)를 연동할 때도 이 모양 그대로 값만 채워 넣으면 되도록 RN/Context에 의존하지 않는
+// 순수 타입으로 여기(유틸)에 둔다.
+export type RoomSensorReading = {
+  temperatureC: number;
+  humidityPct: number;
+  updatedAt: number; // 마지막으로 값이 갱신된 시각(Date.now())
+};
+
+// 이 온도(°C) 이상이면 그 자체로 "위험" - 실제 화재 상황의 급격한 온도 상승을 가정한 참고값(데모용).
+export const SENSOR_DANGER_TEMP_C = 50;
+// 이 온도(°C) 이상이면 "주의" - 화재까지는 아니어도 평소보다 확실히 뜨거운 상태.
+export const SENSOR_CAUTION_TEMP_C = 38;
+// 습도가 이 값(%) 이하로 급격히 낮으면 "주의" - 화재 초기에 흔히 나타나는 건조화 신호로 참고.
+export const SENSOR_CAUTION_HUMIDITY_PCT = 20;
+
+export type SensorRiskLevel = 'safe' | 'caution' | 'danger';
+
+// 센서 값만으로 판단한 위험도. 고온이면 즉시 "위험", 그보다 약한 이상 징후(고온 초입/저습도)는 "주의".
+export function sensorRiskLevel(reading: RoomSensorReading | undefined): SensorRiskLevel {
+  if (!reading) return 'safe';
+  if (reading.temperatureC >= SENSOR_DANGER_TEMP_C) return 'danger';
+  if (reading.temperatureC >= SENSOR_CAUTION_TEMP_C || reading.humidityPct <= SENSOR_CAUTION_HUMIDITY_PCT) {
+    return 'caution';
+  }
+  return 'safe';
+}

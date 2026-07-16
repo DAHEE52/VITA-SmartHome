@@ -23,6 +23,7 @@ import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import { PlusIcon, EllipsisIcon } from '../components/icons';
+import { useCalendar, ScheduleItem, SpecialKind } from '../context/CalendarContext';
 
 // 스크롤 없이 화면 높이 안에 다 들어와야 하므로, MainScreen과 같은 방식으로
 // 화면이 작은 기기에서는 날짜 그리드/일정 리스트 크기를 함께 줄이는 scale 값을 쓴다.
@@ -36,12 +37,78 @@ const MONTH_NAMES = Array.from({ length: 12 }, (_, i) => `${i + 1}월`);
 // "|" 구분선이 항상 같은 x 위치에 오도록 한다 (시간은 이 폭 안에서 오른쪽 정렬).
 const TIME_COL_WIDTH = 52;
 
-// date는 SPECIAL 항목에서만 쓰는 연/월/일 값 - DAILY는 매일 반복이라 날짜가 필요 없다.
-// 연/월까지 저장하므로, 같은 "15일"이라도 7월과 8월의 항목은 서로 다른 일정으로 구분된다.
-type ScheduleDate = { year: number; month: number; day: number };
-type ScheduleItem = { id: string; time: string; label: string; date?: ScheduleDate };
-
 const now = new Date();
+
+// SPECIAL 일정의 유형 칩 3개. 자동화 규칙 화면이 "외출 예정"/"외박 일정"을 트리거로 참조할 때 이 값을 쓴다.
+const KIND_OPTIONS: { value: SpecialKind; label: string }[] = [
+  { value: 'general', label: '일반' },
+  { value: 'outing', label: '외출' },
+  { value: 'overnight', label: '외박' },
+];
+const KIND_LABEL: Record<SpecialKind, string> = { general: '일반', outing: '외출', overnight: '외박' };
+
+const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+const WEEKDAY_SHORT = ['일', '월', '화', '수', '목', '금', '토'];
+
+function isEveryDay(weekdays?: number[]) {
+  return !weekdays || weekdays.length === 0 || weekdays.length >= 7;
+}
+
+// 요일 배열을 "월·수·금" 같은 요약 문자열로 만든다. 매일이면 null(표시 안 함).
+function summarizeWeekdays(weekdays?: number[]): string | null {
+  if (isEveryDay(weekdays)) return null;
+  return [...weekdays!].sort((a, b) => a - b).map((d) => WEEKDAY_SHORT[d]).join('·');
+}
+
+// SPECIAL 일정의 유형(일반/외출/외박)을 고르는 칩 3개.
+function KindChipRow({ value, onChange }: { value: SpecialKind; onChange: (k: SpecialKind) => void }) {
+  return (
+    <View style={styles.kindChipRow}>
+      {KIND_OPTIONS.map((opt) => (
+        <TouchableOpacity
+          key={opt.value}
+          style={[styles.kindChip, value === opt.value && styles.kindChipSelected]}
+          onPress={() => onChange(opt.value)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.kindChipText, value === opt.value && styles.kindChipTextSelected]}>
+            {opt.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+// DAILY(루틴) 일정이 반복될 요일을 고르는 칩 7개(다중 선택, 최소 1개는 항상 선택돼 있어야 함).
+function WeekdayChipRow({ value, onChange }: { value: number[]; onChange: (weekdays: number[]) => void }) {
+  const toggle = (day: number) => {
+    const has = value.includes(day);
+    if (has) {
+      if (value.length <= 1) return;
+      onChange(value.filter((d) => d !== day));
+    } else {
+      onChange([...value, day].sort((a, b) => a - b));
+    }
+  };
+  return (
+    <View style={styles.weekdayChipRow}>
+      {WEEKDAY_SHORT.map((label, day) => {
+        const selected = value.includes(day);
+        return (
+          <TouchableOpacity
+            key={day}
+            style={[styles.weekdayChip, selected && styles.weekdayChipSelected]}
+            onPress={() => toggle(day)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.weekdayChipText, selected && styles.weekdayChipTextSelected]}>{label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
 
 // "9:05" 같은 문자열을 0~23시/0~59분으로 파싱한다. 형식이 안 맞으면 0:00으로 취급.
 function parseTime(time: string): { hour: number; minute: number } {
@@ -172,7 +239,17 @@ function DateGrid({
 // DAILY / SPECIAL 공용 일정 한 줄 ("시간 | 내용" 형태의 회색 카드)
 // 시간은 고정 폭 컬럼 안에서 오른쪽 정렬, 내용은 그 뒤에서 왼쪽 정렬돼서
 // 항목마다 "|" 위치가 흔들리지 않고 시간/내용이 "|" 기준으로 나란히 맞춰진다.
-function ScheduleRow({ time, label, scale }: { time: string; label: string; scale: number }) {
+function ScheduleRow({
+  time,
+  label,
+  subtitle,
+  scale,
+}: {
+  time: string;
+  label: string;
+  subtitle?: string | null;
+  scale: number;
+}) {
   return (
     <Card style={[styles.scheduleRow, { paddingVertical: 12 * scale, marginBottom: 8 * scale }]}>
       <Text
@@ -182,9 +259,16 @@ function ScheduleRow({ time, label, scale }: { time: string; label: string; scal
         {time}
       </Text>
       <View style={[styles.scheduleDivider, { height: 16 * scale, marginHorizontal: 14 * scale }]} />
-      <Text style={[styles.scheduleLabel, { fontSize: 16 * scale }]} numberOfLines={1}>
-        {label}
-      </Text>
+      <View style={styles.scheduleLabelCol}>
+        <Text style={[styles.scheduleLabel, { fontSize: 16 * scale }]} numberOfLines={1}>
+          {label}
+        </Text>
+        {subtitle ? (
+          <Text style={[styles.scheduleSubtitle, { fontSize: 12 * scale }]} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
     </Card>
   );
 }
@@ -559,43 +643,53 @@ function ScheduleEditModal({
 
           <ScrollView style={styles.editListScroll} showsVerticalScrollIndicator={false}>
             {draftItems.map((item) => (
-              <View key={item.id} style={styles.editRow}>
-                {isSpecial && (
+              <View key={item.id} style={styles.editItemBlock}>
+                <View style={styles.editRow}>
+                  {isSpecial && (
+                    <TextInput
+                      style={styles.editDateInput}
+                      value={item.date != null ? String(item.date.day) : ''}
+                      onChangeText={(v) => {
+                        const digits = v.replace(/[^0-9]/g, '');
+                        const day = digits ? Number(digits) : 1;
+                        updateItem(item.id, { date: { year: viewYear, month: viewMonth, day } });
+                      }}
+                      placeholder="날짜"
+                      placeholderTextColor={colors.textGray}
+                      keyboardType="number-pad"
+                    />
+                  )}
+                  <TouchableOpacity
+                    style={styles.editTimeButton}
+                    onPress={() => setEditingTimeId(item.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[styles.editTimeButtonText, !item.time && styles.editTimeButtonPlaceholder]}
+                      numberOfLines={1}
+                    >
+                      {item.time || '시간'}
+                    </Text>
+                  </TouchableOpacity>
                   <TextInput
-                    style={styles.editDateInput}
-                    value={item.date != null ? String(item.date.day) : ''}
-                    onChangeText={(v) => {
-                      const digits = v.replace(/[^0-9]/g, '');
-                      const day = digits ? Number(digits) : 1;
-                      updateItem(item.id, { date: { year: viewYear, month: viewMonth, day } });
-                    }}
-                    placeholder="날짜"
+                    style={styles.editLabelInput}
+                    value={item.label}
+                    onChangeText={(v) => updateItem(item.id, { label: v })}
+                    placeholder="내용"
                     placeholderTextColor={colors.textGray}
-                    keyboardType="number-pad"
+                  />
+                  <TouchableOpacity onPress={() => removeItem(item.id)} hitSlop={10}>
+                    <Text style={styles.editRemoveText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+                {isSpecial ? (
+                  <KindChipRow value={item.kind ?? 'general'} onChange={(k) => updateItem(item.id, { kind: k })} />
+                ) : (
+                  <WeekdayChipRow
+                    value={item.weekdays && item.weekdays.length > 0 ? item.weekdays : ALL_WEEKDAYS}
+                    onChange={(w) => updateItem(item.id, { weekdays: w.length >= 7 ? undefined : w })}
                   />
                 )}
-                <TouchableOpacity
-                  style={styles.editTimeButton}
-                  onPress={() => setEditingTimeId(item.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[styles.editTimeButtonText, !item.time && styles.editTimeButtonPlaceholder]}
-                    numberOfLines={1}
-                  >
-                    {item.time || '시간'}
-                  </Text>
-                </TouchableOpacity>
-                <TextInput
-                  style={styles.editLabelInput}
-                  value={item.label}
-                  onChangeText={(v) => updateItem(item.id, { label: v })}
-                  placeholder="내용"
-                  placeholderTextColor={colors.textGray}
-                />
-                <TouchableOpacity onPress={() => removeItem(item.id)} hitSlop={10}>
-                  <Text style={styles.editRemoveText}>×</Text>
-                </TouchableOpacity>
               </View>
             ))}
           </ScrollView>
@@ -648,6 +742,8 @@ function AddScheduleModal({
   const [time, setTime] = useState('');
   const [label, setLabel] = useState('');
   const [date, setDate] = useState('');
+  const [kind, setKind] = useState<SpecialKind>('general');
+  const [weekdays, setWeekdays] = useState<number[]>(ALL_WEEKDAYS);
   const [timePickerVisible, setTimePickerVisible] = useState(false);
 
   // 달력에서 날짜를 선택해 둔 상태로 +를 누르면, 그 날짜가 미리 채워진 채로 열린다
@@ -657,6 +753,8 @@ function AddScheduleModal({
       setTime('');
       setLabel('');
       setDate(defaultDay != null ? String(defaultDay) : '');
+      setKind('general');
+      setWeekdays(ALL_WEEKDAYS);
     }
   }, [visible, defaultDay]);
 
@@ -670,6 +768,8 @@ function AddScheduleModal({
         label: label.trim(),
         // 지금 보고 있는 연/월에 붙여서 추가한다. 날짜(며칠)를 안 적으면 1일로 기본 지정.
         date: isSpecial ? { year: viewYear, month: viewMonth, day: date ? Number(date) : 1 } : undefined,
+        kind: isSpecial ? kind : undefined,
+        weekdays: !isSpecial && weekdays.length < 7 ? weekdays : undefined,
       });
     }
     onClose();
@@ -713,6 +813,12 @@ function AddScheduleModal({
             />
           </View>
 
+          {isSpecial ? (
+            <KindChipRow value={kind} onChange={setKind} />
+          ) : (
+            <WeekdayChipRow value={weekdays} onChange={setWeekdays} />
+          )}
+
           <View style={styles.modalBottomRow}>
             <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>취소</Text>
@@ -743,9 +849,7 @@ export default function CalendarScreen() {
   const [viewMonth, setViewMonth] = useState(now.getMonth() + 1);
   const [pickerVisible, setPickerVisible] = useState(false);
 
-  // 사전 등록된 예시 데이터 없이 빈 상태로 시작한다 - 항목은 전부 + 버튼으로 사용자가 추가한 것만 남는다.
-  const [dailyItems, setDailyItems] = useState<ScheduleItem[]>([]);
-  const [specialItems, setSpecialItems] = useState<ScheduleItem[]>([]);
+  const { dailyItems, specialItems, setDailyItems, setSpecialItems } = useCalendar();
   const [editingSection, setEditingSection] = useState<'daily' | 'special' | null>(null);
   const [addingSection, setAddingSection] = useState<'daily' | 'special' | null>(null);
   // 달력에서 탭한 날짜(며칠) - 지정돼 있으면 SPECIAL 목록이 이 날짜 것만 보여준다.
@@ -804,7 +908,13 @@ export default function CalendarScreen() {
           onOpenSettings={() => setEditingSection('daily')}
         />
         {dailyItems.map((item) => (
-          <ScheduleRow key={item.id} time={item.time} label={item.label} scale={scale} />
+          <ScheduleRow
+            key={item.id}
+            time={item.time}
+            label={item.label}
+            subtitle={summarizeWeekdays(item.weekdays)}
+            scale={scale}
+          />
         ))}
         <View style={[styles.addButtonWrap, { marginTop: 2 * scale, marginBottom: 2 * scale }]}>
           <AddButton scale={scale} onPress={() => setAddingSection('daily')} />
@@ -817,7 +927,13 @@ export default function CalendarScreen() {
           onOpenSettings={() => setEditingSection('special')}
         />
         {displayedSpecialItems.map((item) => (
-          <ScheduleRow key={item.id} time={item.time} label={item.label} scale={scale} />
+          <ScheduleRow
+            key={item.id}
+            time={item.time}
+            label={item.label}
+            subtitle={item.kind && item.kind !== 'general' ? KIND_LABEL[item.kind] : null}
+            scale={scale}
+          />
         ))}
         <View style={[styles.addButtonWrap, { marginTop: 2 * scale, marginBottom: 2 * scale }]}>
           <AddButton scale={scale} onPress={() => setAddingSection('special')} />
@@ -999,10 +1115,16 @@ const styles = StyleSheet.create({
     width: 2,
     backgroundColor: colors.text,
   },
-  scheduleLabel: {
+  scheduleLabelCol: {
     flex: 1,
+  },
+  scheduleLabel: {
     fontWeight: '500',
     color: colors.text,
+  },
+  scheduleSubtitle: {
+    color: colors.textGray,
+    marginTop: 2,
   },
   addButtonWrap: {
     alignItems: 'center',
@@ -1167,11 +1289,59 @@ const styles = StyleSheet.create({
   editListScroll: {
     maxHeight: 260,
   },
+  editItemBlock: {
+    marginBottom: 12,
+  },
   editRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 10,
+  },
+  kindChipRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 6,
+  },
+  kindChip: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: colors.card,
+  },
+  kindChipSelected: {
+    backgroundColor: colors.orange,
+  },
+  kindChipText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 12,
+    color: colors.textGray2,
+  },
+  kindChipTextSelected: {
+    color: colors.white,
+  },
+  weekdayChipRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 6,
+  },
+  weekdayChip: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekdayChipSelected: {
+    backgroundColor: colors.orange,
+  },
+  weekdayChipText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 12,
+    color: colors.textGray2,
+  },
+  weekdayChipTextSelected: {
+    color: colors.white,
   },
   // 시간 입력칸 자리에 들어가는 버튼 - 누르면 TimePickerModal이 뜬다(자유 텍스트 입력 대신
   // 0:00~23:59 범위 안에서만 고를 수 있게 함).

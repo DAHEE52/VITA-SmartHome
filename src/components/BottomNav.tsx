@@ -6,13 +6,11 @@ import React from 'react';
 import { View, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
-import BookSvg from '../../UIUX/icon/guidebook.svg';
-
 // 경보/알람 메뉴 아이콘
 function SirenIcon({ size }: { size: number }) {
   return (
     <Image
-      source={require('../../UIUX/icon/4-비상벨.png')}
+      source={require('../../assets/icons/4-emergency-bell.png')}
       style={{ width: size, height: size }}
       resizeMode="contain"
     />
@@ -23,22 +21,22 @@ function SirenIcon({ size }: { size: number }) {
 function HomeIcon({ size }: { size: number }) {
   return (
     <Image
-      source={require('../../UIUX/icon/7-홈화면.png')}
+      source={require('../../assets/icons/5-home.png')}
       style={{ width: size, height: size }}
       resizeMode="contain"
     />
   );
 }
 
-// 가이드/설명서 메뉴 아이콘.
-// guidebook.svg는 원본 viewBox 안에서 실제 내용이 차지하는 비율이 홈 아이콘 png보다 작아서
-// (특히 세로 방향) 같은 size를 줘도 눈에 띄게 작아 보인다. 체감 크기를 홈 아이콘과 맞추기 위해
-// 1.2배 보정한 크기로 렌더링한다.
-const BOOK_SIZE_COMPENSATION = 1.2;
-
+// 가이드/설명서 메뉴 아이콘
 function BookIcon({ size }: { size: number }) {
-  const compensated = size * BOOK_SIZE_COMPENSATION;
-  return <BookSvg width={compensated} height={compensated} />;
+  return (
+    <Image
+      source={require('../../assets/icons/8-guidebook.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
 }
 
 type Props = {

@@ -1,5 +1,5 @@
 // 시안 3 - 메인화면.
-// 구조(위→아래): 헤더 / 시계 카드 / 습도·온도·기압 카드 / 오늘의 절전목표 카드
+// 구조(위→아래): 헤더 / 시계 카드 / 습도·온도·날씨 카드 / 오늘의 절전목표 카드
 //              / 4개 메뉴 바로가기 / 하단 네비(사이렌·홈·북)
 //
 // 화면을 스크롤 없이 한 번에 다 보여줘야 하므로, 화면 높이가 작은 기기(iPhone SE 등)에서도
@@ -29,7 +29,7 @@ import {
   GearIcon,
   DropletIcon,
   ThermometerIcon,
-  PressureIcon,
+  WeatherIcon,
   BoltOutlineIcon,
   RunnerIcon,
   FlagIcon,
@@ -109,7 +109,7 @@ function TimeCard({ scale }: { scale: number }) {
   );
 }
 
-// 내부 습도 / 실내 온도 / 기압 3열 위젯
+// 내부 습도 / 실내 온도 / 날씨 3열 위젯
 function StatusCard({ scale }: { scale: number }) {
   const iconWrapStyle = [styles.statusIconWrap, { height: 60 * scale, marginTop: 14 * scale }];
   const valueStyle = [styles.statusValue, { fontSize: 19 * scale, marginTop: 14 * scale }];
@@ -132,11 +132,11 @@ function StatusCard({ scale }: { scale: number }) {
           <Text style={valueStyle}>24.0 °C</Text>
         </View>
         <View style={styles.statusCol}>
-          <Text style={labelStyle}>기압</Text>
+          <Text style={labelStyle}>날씨</Text>
           <View style={iconWrapStyle}>
-            <PressureIcon size={48 * scale} />
+            <WeatherIcon size={48 * scale} />
           </View>
-          <Text style={valueStyle}>1013 hPa</Text>
+          <Text style={valueStyle}>맑음</Text>
         </View>
       </View>
     </Card>

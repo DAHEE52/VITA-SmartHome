@@ -69,6 +69,10 @@ function RoomCard({
 // 방 카드(회색 박스)를 누르면 뜨는 방 설정 창 - 이름 수정 + 기기 ON/OFF 현황(자동/수동) + 방 삭제.
 // 기기별로 평소엔 "자동"(센서가 읽은 값을 그대로 표시, 직접 못 누름)이고, "수동"으로 바꾸면
 // 센서 고장 등으로 값을 믿을 수 없을 때 ON/OFF 배지를 직접 눌러 바꿀 수 있다.
+// 목표 온도 조절 범위 - 냉/난방기 목표 설정치로 흔히 쓰이는 범위 정도로 제한한다.
+const MIN_TARGET_TEMP = 16;
+const MAX_TARGET_TEMP = 30;
+
 function RoomSettingsModal({
   room,
   onClose,
@@ -78,6 +82,7 @@ function RoomSettingsModal({
   onToggleDevicePower,
   onDeleteDevice,
   onAddDevice,
+  onSetTargetTemp,
 }: {
   room: Room | null;
   onClose: () => void;
@@ -87,6 +92,7 @@ function RoomSettingsModal({
   onToggleDevicePower: (roomId: string, deviceName: string) => void;
   onDeleteDevice: (roomId: string, deviceName: string) => void;
   onAddDevice: (roomId: string) => void;
+  onSetTargetTemp: (roomId: string, temp: number) => void;
 }) {
   const [nameInput, setNameInput] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -176,6 +182,33 @@ function RoomSettingsModal({
                 <TouchableOpacity style={styles.renameSaveButton} onPress={handleSave} activeOpacity={0.7}>
                   <Text style={styles.renameSaveText}>저장</Text>
                 </TouchableOpacity>
+              </View>
+
+              <View style={styles.tempRow}>
+                <Text style={styles.tempLabel}>목표 온도</Text>
+                <View style={styles.tempStepperRow}>
+                  <TouchableOpacity
+                    style={styles.tempStepButton}
+                    onPress={() =>
+                      room && onSetTargetTemp(room.id, Math.max(MIN_TARGET_TEMP, room.targetTemp - 1))
+                    }
+                    activeOpacity={0.7}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.tempStepText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.tempValue}>{room?.targetTemp ?? 24}°C</Text>
+                  <TouchableOpacity
+                    style={styles.tempStepButton}
+                    onPress={() =>
+                      room && onSetTargetTemp(room.id, Math.min(MAX_TARGET_TEMP, room.targetTemp + 1))
+                    }
+                    activeOpacity={0.7}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.tempStepText}>＋</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <Text style={styles.deviceSectionHint}>
@@ -348,6 +381,7 @@ export default function SmartHomeControlScreen() {
     deleteDevice,
     toggleDeviceMode,
     toggleDevicePower,
+    setRoomTargetTemp,
   } = useRooms();
   const [settingsRoomId, setSettingsRoomId] = useState<string | null>(null);
   const [addDeviceRoomId, setAddDeviceRoomId] = useState<string | null>(null);
@@ -409,6 +443,7 @@ export default function SmartHomeControlScreen() {
         onToggleDevicePower={toggleDevicePower}
         onDeleteDevice={deleteDevice}
         onAddDevice={openAddDeviceFromSettings}
+        onSetTargetTemp={setRoomTargetTemp}
       />
       <AddDeviceModal
         room={addDeviceRoom}
@@ -535,6 +570,42 @@ const styles = StyleSheet.create({
     fontFamily: fonts.jalnan,
     fontSize: 14,
     color: colors.white,
+  },
+  tempRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  tempLabel: {
+    fontFamily: fonts.jalnan,
+    fontSize: 14,
+    color: colors.text,
+  },
+  tempStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  tempStepButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tempStepText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  tempValue: {
+    fontFamily: fonts.jalnan,
+    fontSize: 15,
+    color: colors.text,
+    minWidth: 46,
+    textAlign: 'center',
   },
   deviceSectionHint: {
     fontSize: 12,
