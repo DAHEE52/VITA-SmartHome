@@ -1,8 +1,9 @@
 // 시안 4 - 스마트홈 제어 화면.
 // 구조: 활성화된 기기 수 카드 / 방(Room) 카드 2x2 그리드(마지막 칸은 방 추가 버튼) / 하단 네비(뒤로가기·홈)
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
@@ -56,15 +57,14 @@ function AddRoomButton() {
 export default function SmartHomeControlScreen() {
   const [rooms, setRooms] = useState<RoomStatus[]>([]);
 
-  const loadRooms = () => {
+  const loadRooms = useCallback(() => {
     getRoomsStatus()
       .then(setRooms)
       .catch((err) => console.warn('방 상태 조회 실패:', err));
-  };
-
-  useEffect(() => {
-    loadRooms();
   }, []);
+
+  // 다른 화면 갔다가 돌아올 때마다 최신 기기 상태로 다시 불러온다.
+  useFocusEffect(loadRooms);
 
   const activeCount = rooms.reduce(
     (sum, room) => sum + room.devices.filter((d) => d.state === 'on').length,

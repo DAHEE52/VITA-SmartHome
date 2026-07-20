@@ -4,9 +4,10 @@
 // power_monitor 노드(PZEM-004T)가 보내는 실측 데이터를 /energy/usage에서 받아 그린다.
 // 기기 수/이름이 고정되어 있지 않으므로(팀마다 다른 기기를 붙일 수 있음) 차트는
 // series: {label, points}[] 형태의 동적 데이터를 받아 그리도록 일반화했다.
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Line, Polyline, Circle, Text as SvgText } from 'react-native-svg';
 
 import { colors, fonts } from '../theme/colors';
@@ -181,11 +182,14 @@ export default function EnergyUsageScreen() {
   const [period, setPeriod] = useState<Period>('month');
   const [usage, setUsage] = useState<EnergyUsage>({ series: [], year_over_year_pct: null });
 
-  useEffect(() => {
-    getEnergyUsage(period)
-      .then(setUsage)
-      .catch((err) => console.warn('에너지 사용량 조회 실패:', err));
-  }, [period]);
+  // 화면에 들어올 때 + period 탭을 바꿀 때마다 다시 불러온다.
+  useFocusEffect(
+    useCallback(() => {
+      getEnergyUsage(period)
+        .then(setUsage)
+        .catch((err) => console.warn('에너지 사용량 조회 실패:', err));
+    }, [period])
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>

@@ -49,7 +49,7 @@ lint/typecheck/test 스크립트는 아직 `package.json`에 정의되어 있지
 
 **디자인 토큰**: [src/theme/colors.ts](src/theme/colors.ts)가 색상/폰트 이름의 단일 출처다. 색상은 원본 시안 PNG에서 직접 픽셀 샘플링한 값이므로, 새 화면에서 색이 필요하면 여기서 가져다 쓰고 눈대중으로 새로 고르지 않는다. 폰트는 `fonts.jalnan`(헤드라인/본문 대부분)과 `fonts.pixel`(메인화면 디지털시계 숫자 전용) 두 개뿐이며, 이 키 이름이 `App.tsx`의 `useFonts()` 키와 정확히 일치해야 한다. 폰트 파일은 `assets/fonts/Jalnan.ttf`, `assets/fonts/DungGeunMo.ttf`로 존재한다. `assets/fonts/DSEG7Classic-Bold.ttf`(7세그먼트 디지털 폰트, SIL OFL 라이선스)도 함께 들어있지만 아직 `App.tsx`/`colors.ts` 어디에도 연결되어 있지 않은 미사용 에셋이다.
 
-**에셋 폴더 상태**: `assets/`에는 시안에서 추출한 아이콘 PNG 20개(`1-logo.png` ~ `20-menu.png`)가 들어있다. 다만 `app.json`이 요구하는 앱 아이콘 경로(`icon.png`, `favicon.png`, `android-icon-foreground.png`, `android-icon-background.png`, `android-icon-monochrome.png`)와 파일명이 일치하지 않아, 이 5개 파일은 현재 존재하지 않는다 — JS 번들링에는 영향 없지만(Metro는 이 경로들을 import하지 않음) `expo prebuild`/네이티브 빌드나 `eas build` 단계에서는 실패한다. 네이티브 빌드 전에 `1-logo.png` 등 적절한 원본을 요구되는 파일명으로 복사/리사이즈해서 채워야 한다.
+**에셋 폴더 상태**: `assets/`에는 시안에서 추출한 아이콘 PNG 20개(`1-logo.png` ~ `20-menu.png`)와, `app.json`이 요구하는 앱 아이콘 5종(`icon.png`, `favicon.png`, `android-icon-foreground.png`, `android-icon-background.png`, `android-icon-monochrome.png`)이 모두 들어있다. 이 5종은 `1-logo.png`(VITA 로고 원본)에서 집+번개 심볼 부분만 잘라내어 생성한 것이다 — 로고를 다시 만들거나 교체할 경우 이 5개 파일도 함께 재생성해야 한다.
 
 **공용 컴포넌트**:
 - [src/components/Card.tsx](src/components/Card.tsx) — 시안 전반에 반복되는 연회색 둥근 카드. 화면마다 이걸로 감싸고 `style` prop으로 padding/margin만 덮어쓴다.

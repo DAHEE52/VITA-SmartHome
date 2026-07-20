@@ -1,0 +1,6 @@
+fastapi
+httpx
+supabase
+pydantic-settings
+tzdata
+mangum

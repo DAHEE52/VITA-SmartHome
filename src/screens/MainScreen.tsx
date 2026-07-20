@@ -5,10 +5,10 @@
 // 화면을 스크롤 없이 한 번에 다 보여줘야 하므로, 화면 높이가 작은 기기(iPhone SE 등)에서도
 // 안 잘리도록 useWindowDimensions로 화면 높이를 재서 카드 padding/폰트 크기를 함께 줄이는
 // `scale` 값을 만들어 쓴다. 큰 화면에서는 scale=1(원래 크기), 작은 화면일수록 최대 22%까지 축소.
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
@@ -174,20 +174,24 @@ export default function MainScreen() {
 
   const [summary, setSummary] = useState<HomeSummary | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    getHomeSummary()
-      .then((data) => {
-        if (!cancelled) setSummary(data);
-      })
-      .catch((err) => {
-        // 백엔드가 꺼져 있어도 화면은 대시(—)로 계속 정상 표시되게 함
-        console.warn('홈 요약 조회 실패:', err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // useEffect(마운트 1회)가 아니라 useFocusEffect를 써서, 다른 화면 갔다가 돌아올 때마다
+  // 최신 센서 값으로 다시 불러온다 (실기기 센서 값은 계속 바뀌므로).
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      getHomeSummary()
+        .then((data) => {
+          if (!cancelled) setSummary(data);
+        })
+        .catch((err) => {
+          // 백엔드가 꺼져 있어도 화면은 대시(—)로 계속 정상 표시되게 함
+          console.warn('홈 요약 조회 실패:', err);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
