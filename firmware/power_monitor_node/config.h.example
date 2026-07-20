@@ -1,0 +1,14 @@
+#pragma once
+
+// 이 파일을 config.h로 복사한 뒤 실제 값으로 채운다. config.h는 커밋하지 않는다.
+
+#define WIFI_SSID "your-wifi-ssid"
+#define WIFI_PASSWORD "your-wifi-password"
+
+// 아래는 이 작업을 진행한 PC의 현재 LAN IP. 실행 PC/네트워크가 다르면 ipconfig로 재확인.
+#define API_BASE_URL "http://192.168.200.141:8000"
+// VITA/backend/.env 의 DEVICE_API_KEY와 반드시 동일해야 함 (이미 맞춰서 생성해둔 값)
+#define DEVICE_KEY "345e01dbf13a5ba7d12843403115746a7f18b270431bc565"
+
+#define DEVICE_ID "living-power-01"
+#define ROOM "거실"

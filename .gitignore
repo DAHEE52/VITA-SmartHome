@@ -1,0 +1,26 @@
+# --- Node / Expo ---
+node_modules/
+.expo/
+dist/
+web-build/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# --- Python / FastAPI ---
+backend/venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+
+# --- 비밀값 (절대 커밋 금지) ---
+.env
+backend/.env
+firmware/*/config.h
+
+# --- OS / 에디터 ---
+.DS_Store
+Thumbs.db

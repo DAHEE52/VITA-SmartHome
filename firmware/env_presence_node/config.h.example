@@ -1,0 +1,17 @@
+#pragma once
+
+// 이 파일을 config.h로 복사한 뒤 실제 값으로 채운다. config.h는 커밋하지 않는다.
+
+#define WIFI_SSID "your-wifi-ssid"
+#define WIFI_PASSWORD "your-wifi-password"
+
+// FastAPI 서버가 떠 있는 PC의 LAN IP:port. 아래는 이 작업을 진행한 PC의 현재 IP이니
+// 실제 실행 PC/네트워크가 다르면 ipconfig로 확인해서 바꿀 것.
+#define API_BASE_URL "http://192.168.200.141:8000"
+
+// VITA/backend/.env 의 DEVICE_API_KEY와 반드시 동일해야 함 (이미 맞춰서 생성해둔 값)
+#define DEVICE_KEY "345e01dbf13a5ba7d12843403115746a7f18b270431bc565"
+
+// 이 노드의 고유 ID와 소속 방 이름
+#define DEVICE_ID "living-env-01"
+#define ROOM "거실"
