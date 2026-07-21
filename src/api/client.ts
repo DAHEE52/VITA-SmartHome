@@ -70,3 +70,73 @@ export function controlDevice(deviceId: string, command: 'on' | 'off'): Promise<
 export function getEnergyUsage(period: Period): Promise<EnergyUsage> {
   return request<EnergyUsage>(`/energy/usage?period=${period}`);
 }
+
+// --- 캘린더(schedule_items) ---
+
+export type SpecialKind = 'general' | 'outing' | 'overnight';
+
+export type ScheduleDate = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+export type ScheduleItemOut = {
+  id: number;
+  time: string;
+  label: string;
+  kind: SpecialKind | null;
+  date: ScheduleDate | null;
+  weekdays: number[] | null;
+};
+
+export function getDailyItems(): Promise<ScheduleItemOut[]> {
+  return request<ScheduleItemOut[]>('/schedule/daily');
+}
+
+export function createDailyItem(body: { time: string; label: string; weekdays?: number[] }): Promise<ScheduleItemOut> {
+  return request('/schedule/daily', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function getSpecialItems(): Promise<ScheduleItemOut[]> {
+  return request<ScheduleItemOut[]>('/schedule/special');
+}
+
+export function createSpecialItem(body: {
+  time: string;
+  label: string;
+  kind?: SpecialKind;
+  date: ScheduleDate;
+}): Promise<ScheduleItemOut> {
+  return request('/schedule/special', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function deleteScheduleItem(id: number): Promise<{ ok: boolean }> {
+  return request(`/schedule/${id}`, { method: 'DELETE' });
+}
+
+// --- 알림함(notifications) ---
+
+export type NotificationOut = {
+  id: number;
+  title: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+};
+
+export function getNotifications(): Promise<NotificationOut[]> {
+  return request<NotificationOut[]>('/notifications');
+}
+
+export function createNotification(title: string, message: string): Promise<NotificationOut> {
+  return request('/notifications', { method: 'POST', body: JSON.stringify({ title, message }) });
+}
+
+export function markNotificationRead(id: number): Promise<{ ok: boolean }> {
+  return request(`/notifications/${id}/read`, { method: 'POST' });
+}
+
+export function deleteNotification(id: number): Promise<{ ok: boolean }> {
+  return request(`/notifications/${id}`, { method: 'DELETE' });
+}

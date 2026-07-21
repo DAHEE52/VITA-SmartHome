@@ -47,4 +47,5 @@ export const colors = {
 export const fonts = {
   jalnan: 'Jalnan', // 굵고 각진 헤드라인용 한글 폰트 (로고, 타이틀, 큰 숫자 등)
   pixel: 'DungGeunMo', // 메인화면 시계 숫자 등 픽셀 느낌이 필요한 곳 전용
+  digital: 'DSEG7Classic-Bold', // 7세그먼트 디지털시계 스타일 (SIL OFL), 현재 미사용 예비 폰트
 } as const;

@@ -3,6 +3,7 @@
 // 새 아이콘이 필요하면 이 파일에 같은 패턴(size, color props)으로 추가하면 다른 화면에서도 바로 재사용 가능.
 import React from 'react';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
+import { Image } from 'react-native';
 import { colors } from '../theme/colors';
 
 type IconProps = { size?: number; color?: string };
@@ -245,5 +246,66 @@ export function PlusIcon({ size = 24, color = colors.text }: IconProps) {
       <Line x1={50} y1={16} x2={50} y2={84} stroke={color} strokeWidth={8} strokeLinecap="round" />
       <Line x1={16} y1={50} x2={84} y2={50} stroke={color} strokeWidth={8} strokeLinecap="round" />
     </Svg>
+  );
+}
+
+// 삭제/닫기용 "X" 아이콘. PlusIcon과 같은 두 직선 조합을 대각선으로 그린 것.
+export function CloseIcon({ size = 24, color = colors.text }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 100">
+      <Line x1={22} y1={22} x2={78} y2={78} stroke={color} strokeWidth={8} strokeLinecap="round" />
+      <Line x1={78} y1={22} x2={22} y2={78} stroke={color} strokeWidth={8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// "에너지 나무" 메뉴 아이콘
+export function TreeIcon({ size = 40 }: { size?: number }) {
+  return (
+    <Image
+      source={require('../../assets/icons/6-energy-tree.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
+}
+
+// "자동화 규칙" 메뉴 아이콘
+export function AutomationIcon({ size = 40 }: { size?: number }) {
+  return (
+    <Image
+      source={require('../../assets/icons/13-automation.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
+}
+
+// 에너지 나무 화면의 성장 단계 아이콘 - 새싹(가장 어림) → 어린 나무 → 나무(다 자람) 순.
+export function SproutIcon({ size = 40 }: { size?: number }) {
+  return (
+    <Image
+      source={require('../../assets/icons/9-sprout.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
+}
+export function SaplingIcon({ size = 40 }: { size?: number }) {
+  return (
+    <Image
+      source={require('../../assets/icons/10-sapling.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
+}
+export function GrownTreeIcon({ size = 40 }: { size?: number }) {
+  return (
+    <Image
+      source={require('../../assets/icons/11-tree.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
   );
 }

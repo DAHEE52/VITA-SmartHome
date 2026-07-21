@@ -2,6 +2,7 @@
   "expo": {
     "name": "VITA",
     "slug": "vita-smarthome",
+    "owner": "vitateam",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,6 +26,11 @@
     "plugins": [
       "expo-font",
       "expo-splash-screen"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9f93143b-2eac-41c1-9d84-117db5bffe5d"
+      }
+    }
   }
 }

@@ -70,3 +70,47 @@ class EnergySeries(BaseModel):
 class EnergyUsage(BaseModel):
     series: list[EnergySeries]
     year_over_year_pct: Optional[float]
+
+
+SpecialKind = Literal["general", "outing", "overnight"]
+
+
+class ScheduleDate(BaseModel):
+    year: int
+    month: int
+    day: int
+
+
+class ScheduleItemOut(BaseModel):
+    id: int
+    time: str
+    label: str
+    kind: Optional[SpecialKind] = None
+    date: Optional[ScheduleDate] = None
+    weekdays: Optional[list[int]] = None
+
+
+class DailyItemCreate(BaseModel):
+    time: str
+    label: str
+    weekdays: Optional[list[int]] = None
+
+
+class SpecialItemCreate(BaseModel):
+    time: str
+    label: str
+    kind: SpecialKind = "general"
+    date: ScheduleDate
+
+
+class NotificationOut(BaseModel):
+    id: int
+    title: str
+    message: str
+    read: bool
+    created_at: str
+
+
+class NotificationCreate(BaseModel):
+    title: str
+    message: str

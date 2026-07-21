@@ -9,6 +9,16 @@ import * as SplashScreenModule from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 
 import RootNavigator from './src/navigation/RootNavigator';
+import { GoalProvider } from './src/context/GoalContext';
+import { DemoRoomsProvider } from './src/context/DemoRoomsContext';
+import { EnergyHistoryProvider } from './src/context/EnergyHistoryContext';
+import { NotificationsProvider } from './src/context/NotificationsContext';
+import { CalendarProvider } from './src/context/CalendarContext';
+import { PresenceProvider } from './src/context/PresenceContext';
+import { AutomationProvider } from './src/context/AutomationContext';
+import { SensorProvider } from './src/context/SensorContext';
+import { FireSafetyProvider } from './src/context/FireSafetyContext';
+import { SettingsProvider } from './src/context/SettingsContext';
 
 // 네이티브 스플래시(앱 아이콘 로딩 화면)가 폰트 로딩 전에 자동으로 사라지지 않도록 유지시킨다.
 SplashScreenModule.preventAutoHideAsync().catch(() => {});
@@ -34,7 +44,30 @@ export default function App() {
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
       <StatusBar style="dark" />
-      <RootNavigator />
+      {/* 자동화/전기요금/에너지나무/화재감지 등 신규 화면들이 쓰는 Context 레이어.
+          DemoRooms 계열은 실제 백엔드(getRoomsStatus 등)와 무관한 순수 시뮬레이션이고,
+          Calendar/Notifications만 실제 Supabase에 저장된다. 의존 순서: 아래 참고. */}
+      <GoalProvider>
+        <DemoRoomsProvider>
+          <EnergyHistoryProvider>
+            <NotificationsProvider>
+              <CalendarProvider>
+                <PresenceProvider>
+                  <AutomationProvider>
+                    <SensorProvider>
+                      <FireSafetyProvider>
+                        <SettingsProvider>
+                          <RootNavigator />
+                        </SettingsProvider>
+                      </FireSafetyProvider>
+                    </SensorProvider>
+                  </AutomationProvider>
+                </PresenceProvider>
+              </CalendarProvider>
+            </NotificationsProvider>
+          </EnergyHistoryProvider>
+        </DemoRoomsProvider>
+      </GoalProvider>
     </View>
   );
 }

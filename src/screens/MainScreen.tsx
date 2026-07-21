@@ -14,7 +14,10 @@ import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import VitaLogo from '../components/VitaLogo';
 import BottomNav from '../components/BottomNav';
+import MenuModal from '../components/MenuModal';
+import NotificationsModal from '../components/NotificationsModal';
 import { getHomeSummary, HomeSummary } from '../api/client';
+import { useNotifications } from '../context/NotificationsContext';
 import {
   MenuIcon,
   BellIcon,
@@ -28,26 +31,38 @@ import {
   RemoteIcon,
   CalendarIcon,
   ChartUpIcon,
-  HeartPulseIcon,
+  TreeIcon,
 } from '../components/icons';
 
 // 디자인 기준 높이(iPhone 14 등 표준 화면). 이보다 작은 기기에서만 scale이 1 밑으로 내려간다.
 const REFERENCE_HEIGHT = 820;
 const MIN_SCALE = 0.78;
 
-// 상단 헤더: 좌측 VITA 로고, 우측 메뉴/알림/설정 아이콘 3개
-function Header() {
+// 상단 헤더: 좌측 VITA 로고, 우측 메뉴/알림/설정 아이콘 3개.
+// 메뉴→전체 기능 목록 모달, 알림(벨)→알림함 모달(안읽음 뱃지 표시), 설정→Settings 화면 이동.
+function Header({
+  onMenuPress,
+  onBellPress,
+  onGearPress,
+  unreadCount,
+}: {
+  onMenuPress: () => void;
+  onBellPress: () => void;
+  onGearPress: () => void;
+  unreadCount: number;
+}) {
   return (
     <View style={styles.header}>
       <VitaLogo size={26} />
       <View style={styles.headerIcons}>
-        <TouchableOpacity hitSlop={12}>
+        <TouchableOpacity hitSlop={12} onPress={onMenuPress}>
           <MenuIcon size={30} />
         </TouchableOpacity>
-        <TouchableOpacity hitSlop={12}>
+        <TouchableOpacity hitSlop={12} onPress={onBellPress} style={styles.bellWrap}>
           <BellIcon size={30} />
+          {unreadCount > 0 && <View style={styles.unreadDot} />}
         </TouchableOpacity>
-        <TouchableOpacity hitSlop={12}>
+        <TouchableOpacity hitSlop={12} onPress={onGearPress}>
           <GearIcon size={30} />
         </TouchableOpacity>
       </View>
@@ -147,7 +162,7 @@ function MenuGrid({ scale }: { scale: number }) {
     { label: '스마트홈 제어', Icon: RemoteIcon, route: 'SmartHomeControl' },
     { label: '캘린더', Icon: CalendarIcon, route: 'Calendar' },
     { label: '에너지 사용량', Icon: ChartUpIcon, route: 'EnergyUsage' },
-    { label: '헬스케어', Icon: HeartPulseIcon, route: 'Healthcare' },
+    { label: '에너지 나무', Icon: TreeIcon, route: 'EnergyTree' },
   ] as const;
 
   return (
@@ -172,7 +187,11 @@ export default function MainScreen() {
   // (너무 작아지면 오히려 가독성이 떨어지므로 하한선을 둠).
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
 
+  const navigation = useNavigation<any>();
   const [summary, setSummary] = useState<HomeSummary | null>(null);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const { unreadCount } = useNotifications();
 
   // useEffect(마운트 1회)가 아니라 useFocusEffect를 써서, 다른 화면 갔다가 돌아올 때마다
   // 최신 센서 값으로 다시 불러온다 (실기기 센서 값은 계속 바뀌므로).
@@ -195,7 +214,12 @@ export default function MainScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <Header />
+      <Header
+        onMenuPress={() => setMenuVisible(true)}
+        onBellPress={() => setNotificationsVisible(true)}
+        onGearPress={() => navigation.navigate('Settings')}
+        unreadCount={unreadCount}
+      />
       {/* 스크롤 없이 화면 높이 안에 다 들어오도록 flex:1 + space-between으로
           네 블록(시계/상태/목표/메뉴) 사이 여백을 화면 크기에 맞춰 자동 분배한다. */}
       <View style={styles.middleContent}>
@@ -211,6 +235,9 @@ export default function MainScreen() {
       <View style={styles.bottomNavWrap}>
         <BottomNav variant="main" />
       </View>
+
+      <MenuModal visible={menuVisible} onClose={() => setMenuVisible(false)} />
+      <NotificationsModal visible={notificationsVisible} onClose={() => setNotificationsVisible(false)} />
     </SafeAreaView>
   );
 }
@@ -243,6 +270,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 20,
+  },
+  bellWrap: {
+    position: 'relative',
+  },
+  unreadDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: colors.red,
   },
 
   timeCard: {

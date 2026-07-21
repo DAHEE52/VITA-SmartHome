@@ -112,14 +112,13 @@ export default function BottomNav({ variant = 'main' }: Props) {
 
   return (
     <View style={styles.mainRow}>
-      {/* 사이렌 탭은 아직 연결할 화면이 없어 현재는 시각적 요소로만 존재 */}
-      <TouchableOpacity hitSlop={16}>
+      <TouchableOpacity onPress={() => navigation.navigate('FirePrevention')} hitSlop={16}>
         <SirenIcon size={iconSize} />
       </TouchableOpacity>
       <TouchableOpacity onPress={() => navigation.navigate('Main')} hitSlop={16}>
         <HomeIcon size={iconSize} />
       </TouchableOpacity>
-      <TouchableOpacity hitSlop={16}>
+      <TouchableOpacity onPress={() => navigation.navigate('Guidebook')} hitSlop={16}>
         <BookIcon size={iconSize} />
       </TouchableOpacity>
     </View>

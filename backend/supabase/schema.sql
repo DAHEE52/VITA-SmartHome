@@ -31,3 +31,28 @@ create table if not exists device_commands (
 
 create index if not exists idx_readings_device_time on sensor_readings(device_id, recorded_at desc);
 create index if not exists idx_commands_device_status on device_commands(device_id, status);
+
+-- 캘린더(DAILY/SPECIAL 일정) - CalendarScreen/AutomationContext가 사용.
+create table if not exists schedule_items (
+  id bigserial primary key,
+  list_kind text not null check (list_kind in ('daily', 'special')),
+  time text not null,
+  label text not null,
+  special_kind text check (special_kind in ('general', 'outing', 'overnight')),
+  item_year int,
+  item_month int,
+  item_day int,
+  weekdays int[],
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_schedule_list_kind on schedule_items(list_kind);
+
+-- 알림함 - MainScreen 벨 아이콘/NotificationsModal이 사용.
+create table if not exists notifications (
+  id bigserial primary key,
+  title text not null,
+  message text not null,
+  read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_notifications_created on notifications(created_at desc);
