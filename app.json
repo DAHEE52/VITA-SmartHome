@@ -2,7 +2,6 @@
   "expo": {
     "name": "VITA",
     "slug": "vita-smarthome",
-    "owner": "vitateam",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -11,7 +10,6 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.vitasmarthome.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -21,16 +19,24 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "splash": {
+        "image": "./assets/splash-icon.png",
+        "backgroundColor": "#FFFFFF",
+        "resizeMode": "contain"
+      }
     },
     "plugins": [
       "expo-font",
-      "expo-splash-screen"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "9f93143b-2eac-41c1-9d84-117db5bffe5d"
-      }
-    }
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 260,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ]
+    ]
   }
 }

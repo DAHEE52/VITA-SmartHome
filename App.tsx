@@ -9,6 +9,16 @@ import * as SplashScreenModule from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 
 import RootNavigator from './src/navigation/RootNavigator';
+import { GoalProvider } from './src/context/GoalContext';
+import { RoomsProvider } from './src/context/RoomsContext';
+import { EnergyHistoryProvider } from './src/context/EnergyHistoryContext';
+import { NotificationsProvider } from './src/context/NotificationsContext';
+import { FireSafetyProvider } from './src/context/FireSafetyContext';
+import { SettingsProvider } from './src/context/SettingsContext';
+import { CalendarProvider } from './src/context/CalendarContext';
+import { PresenceProvider } from './src/context/PresenceContext';
+import { AutomationProvider } from './src/context/AutomationContext';
+import { SensorProvider } from './src/context/SensorContext';
 
 // 네이티브 스플래시(앱 아이콘 로딩 화면)가 폰트 로딩 전에 자동으로 사라지지 않도록 유지시킨다.
 SplashScreenModule.preventAutoHideAsync().catch(() => {});
@@ -18,6 +28,7 @@ export default function App() {
     // 키 이름이 곧 style의 fontFamily 값이 되므로 theme/colors.ts의 fonts.* 값과 반드시 일치해야 함
     Jalnan: require('./assets/fonts/Jalnan.ttf'),
     DungGeunMo: require('./assets/fonts/DungGeunMo.ttf'),
+    'DSEG7Classic-Bold': require('./assets/fonts/DSEG7Classic-Bold.ttf'),
   });
 
   // 폰트 로딩이 끝난 직후 레이아웃이 그려지면 그때 네이티브 스플래시를 감춘다.
@@ -34,7 +45,27 @@ export default function App() {
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
       <StatusBar style="dark" />
-      <RootNavigator />
+      <GoalProvider>
+        <RoomsProvider>
+          <EnergyHistoryProvider>
+            <NotificationsProvider>
+              <CalendarProvider>
+                <PresenceProvider>
+                  <AutomationProvider>
+                    <SensorProvider>
+                      <FireSafetyProvider>
+                        <SettingsProvider>
+                          <RootNavigator />
+                        </SettingsProvider>
+                      </FireSafetyProvider>
+                    </SensorProvider>
+                  </AutomationProvider>
+                </PresenceProvider>
+              </CalendarProvider>
+            </NotificationsProvider>
+          </EnergyHistoryProvider>
+        </RoomsProvider>
+      </GoalProvider>
     </View>
   );
 }
