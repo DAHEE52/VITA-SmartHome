@@ -2,6 +2,7 @@
   "expo": {
     "name": "VITA",
     "slug": "vita-smarthome",
+    "owner": "daheek",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,6 +11,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.daheek.vitasmarthome",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -37,6 +39,11 @@
           "backgroundColor": "#FFFFFF"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a9c8549c-2065-4a21-aacb-38e6ecca2016"
+      }
+    }
   }
 }

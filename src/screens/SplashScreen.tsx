@@ -21,7 +21,7 @@ export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.logoWrap}>
-        <VitaLogo size={110} showTagline />
+        <VitaLogo size={95} showTagline />
       </View>
     </View>
   );
@@ -37,5 +37,6 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingBottom: 60,
   },
 });

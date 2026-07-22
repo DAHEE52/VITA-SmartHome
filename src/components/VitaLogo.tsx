@@ -35,7 +35,7 @@ export default function VitaLogo({ size = 60, showTagline = false }: Props) {
             fontFamily: fonts.jalnan,
             fontSize: size * 0.16,
             color: colors.text,
-            marginTop: size * 0.3,
+            marginTop: size * 0.15,
             textAlign: 'center',
           }}
         >

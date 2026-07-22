@@ -1,27 +1,41 @@
-# --- Node / Expo ---
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
 node_modules/
+
+# Expo
 .expo/
 dist/
 web-build/
-npm-debug.*
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
 
-# --- Python / FastAPI ---
-backend/venv/
-backend/__pycache__/
-**/__pycache__/
-*.pyc
+# Metro
+.metro-health-check*
 
-# --- 비밀값 (절대 커밋 금지) ---
-.env
-backend/.env
-firmware/*/config.h
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
 
-# --- OS / 에디터 ---
+# macOS
 .DS_Store
-Thumbs.db
-.claude/
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
