@@ -36,6 +36,10 @@ yarn-error.*
 backend/.env
 firmware/*/config.h
 
+# Lambda build artifacts
+backend/build/
+backend/lambda_deploy.zip
+
 # typescript
 *.tsbuildinfo
 

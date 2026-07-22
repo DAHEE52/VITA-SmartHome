@@ -4,6 +4,7 @@
 // 3) 로드가 끝나면 RootNavigator로 실제 화면들을 렌더링한다.
 import React, { useCallback } from 'react';
 import { View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreenModule from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
@@ -43,29 +44,31 @@ export default function App() {
   }
 
   return (
-    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <StatusBar style="dark" />
-      <GoalProvider>
-        <RoomsProvider>
-          <EnergyHistoryProvider>
-            <NotificationsProvider>
-              <CalendarProvider>
-                <PresenceProvider>
-                  <AutomationProvider>
-                    <SensorProvider>
-                      <FireSafetyProvider>
-                        <SettingsProvider>
-                          <RootNavigator />
-                        </SettingsProvider>
-                      </FireSafetyProvider>
-                    </SensorProvider>
-                  </AutomationProvider>
-                </PresenceProvider>
-              </CalendarProvider>
-            </NotificationsProvider>
-          </EnergyHistoryProvider>
-        </RoomsProvider>
-      </GoalProvider>
-    </View>
+    <SafeAreaProvider>
+      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+        <StatusBar style="dark" />
+        <GoalProvider>
+          <RoomsProvider>
+            <EnergyHistoryProvider>
+              <NotificationsProvider>
+                <CalendarProvider>
+                  <PresenceProvider>
+                    <AutomationProvider>
+                      <SensorProvider>
+                        <FireSafetyProvider>
+                          <SettingsProvider>
+                            <RootNavigator />
+                          </SettingsProvider>
+                        </FireSafetyProvider>
+                      </SensorProvider>
+                    </AutomationProvider>
+                  </PresenceProvider>
+                </CalendarProvider>
+              </NotificationsProvider>
+            </EnergyHistoryProvider>
+          </RoomsProvider>
+        </GoalProvider>
+      </View>
+    </SafeAreaProvider>
   );
 }
