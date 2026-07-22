@@ -2,7 +2,12 @@
 // 원래 SmartHomeControlScreen 안의 지역 state였지만, 실시간 전기요금 미리보기(BillReceiptScreen)에서도
 // "지금 켜져 있는 기기가 무엇인지"를 그대로 봐야 하고, GoalContext와 같은 이유로 화면을 오갈 때도
 // 값이 유지되어야 하므로 네비게이터보다 위(App.tsx)에서 한 번만 마운트되는 이 Provider로 옮겼다.
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+//
+// 방/기기는 사용자가 앱 안에서 직접 등록하는 가상의 값이라 백엔드에 대응하는 저장 API가 없다
+// (실제 기기는 ESP32가 스스로 /devices/register로 등록한다). 그래도 앱을 껐다 켜면 사라지는 건
+// 사용성이 나쁘므로, DB 대신 기기 로컬 AsyncStorage에 저장해 최소한 재시작해도 유지되게 한다.
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // mode: 'auto'면 센서가 읽은 전원 상태(on)를 그대로 보여주기만 하고, 'manual'이면 센서 고장 등에
 // 대비해 사용자가 직접 on/off를 지정한 값이다. 평소엔 전부 'auto'로 시작한다.
@@ -16,6 +21,7 @@ export type Room = { id: string; label: string; devices: Device[]; targetTemp: n
 
 export const MAX_ROOMS = 12; // "+" 버튼으로 추가할 수 있는 방의 최대 개수
 const DEFAULT_TARGET_TEMP = 24;
+const STORAGE_KEY = 'vita.rooms.v1';
 
 // 초기 방 목록. 기기는 전부 등록되지 않은 상태(빈 목록)로 초기화하고, 방 설정 창의 "기기 추가"로
 // 사용자가 직접 등록해야만 각 방에 기기가 나타난다.
@@ -44,6 +50,25 @@ const RoomsContext = createContext<RoomsContextValue | null>(null);
 
 export function RoomsProvider({ children }: { children: ReactNode }) {
   const [rooms, setRooms] = useState<Room[]>(initialRooms);
+  // 저장된 값을 아직 불러오는 중일 때 initialRooms를 그대로 저장해버려 기존 값을 덮어쓰지
+  // 않도록, 로딩이 끝나기 전까지는 아래 저장 useEffect를 건너뛴다.
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY)
+      .then((raw) => {
+        if (raw) setRooms(JSON.parse(raw));
+      })
+      .catch((err) => console.warn('방 목록 불러오기 실패:', err))
+      .finally(() => setLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(rooms)).catch((err) =>
+      console.warn('방 목록 저장 실패:', err)
+    );
+  }, [rooms, loaded]);
 
   const addRoom = () => {
     setRooms((prev) => {

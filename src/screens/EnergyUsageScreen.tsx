@@ -1,23 +1,42 @@
 // 시안 5 - 에너지 사용량 화면.
 // 구조: 전년/전월/전일 대비 사용량 카드(연/월/일 탭 포함) / 총 사용량 라인차트 / 실시간 기기별 사용 현황
 //
-// EnergyHistoryContext가 실제 켜진 기기의 소비전력을 주기적으로 샘플링해 쌓은 "일별 누적 kWh" 로그를
-// 그대로 쓴다. 앱을 막 쓰기 시작한 시점엔 과거 로그가 없으므로 그래프는 0에서 시작하고 증감률도
-// 0%로 표시되며, 실제로 기기를 켜고 끄며 데이터가 쌓여야만 그래프와 증감률이 의미 있는 값을 갖는다.
+// 라인차트는 /energy/usage(power_monitor 기기의 실측 누적 전력량)를 받아, 기기별 시리즈를
+// x_label(연도/월/일 구간)이 같은 지점끼리 합산한 "총 사용량" 한 줄로 그린다. 아직 등록된
+// power_monitor가 없거나 데이터가 안 쌓였으면 빈 시리즈가 오고, 증감률도 0%로 표시된다.
 // "실시간 기기별 사용 현황"은 방이 달라도 기기 종류가 같으면 하나로 묶고(예: 거실 조명 + 방2 조명 =
-// 조명), 소비전력 상위 5개 종류만 보여준 뒤 나머지는 "기타"로 합산한다(summarizeDeviceUsage).
-import React, { useState } from 'react';
+// 조명), 소비전력 상위 5개 종류만 보여준 뒤 나머지는 "기타"로 합산한다(summarizeDeviceUsage,
+// RoomsContext의 로컬 방/기기 목록 기준 - 방/기기 관리는 아직 백엔드에 연동되지 않았다).
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Line, Polyline, Circle, Text as SvgText } from 'react-native-svg';
 
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import { useRooms } from '../context/RoomsContext';
-import { useEnergyHistory } from '../context/EnergyHistoryContext';
 import { summarizeDeviceUsage } from '../utils/energy';
-import { getDailySeries, getMonthlySeries, getYearlySeries, calcChange, SeriesPoint } from '../utils/energySeries';
+import { calcChange, SeriesPoint } from '../utils/energySeries';
+import { getEnergyUsage, EnergyUsage } from '../api/client';
+
+// 기기별로 나뉘어 오는 백엔드 시리즈를 x_label이 같은 지점끼리 합쳐 "총 사용량" 한 줄로 만든다.
+// (등록된 power_monitor 기기가 여러 개여도 화면에는 지금처럼 단일 라인차트만 유지하기 위함)
+function aggregateTotalSeries(usage: EnergyUsage): SeriesPoint[] {
+  const order: string[] = [];
+  const totals = new Map<string, number>();
+  for (const s of usage.series) {
+    for (const p of s.points) {
+      if (!totals.has(p.x_label)) {
+        order.push(p.x_label);
+        totals.set(p.x_label, 0);
+      }
+      totals.set(p.x_label, totals.get(p.x_label)! + p.value);
+    }
+  }
+  return order.map((label) => ({ label, value: totals.get(label)! }));
+}
 
 const SCREEN_PADDING = 20;
 // 스크롤 없이 화면 높이 안에 다 들어와야 하므로, MainScreen과 같은 방식으로
@@ -225,16 +244,20 @@ export default function EnergyUsageScreen() {
   const { height } = useWindowDimensions();
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
   const [period, setPeriod] = useState<Period>('year');
+  const [usage, setUsage] = useState<EnergyUsage>({ series: [], year_over_year_pct: null });
 
   const { rooms } = useRooms();
-  const { dailyUsage } = useEnergyHistory();
 
-  const series =
-    period === 'year'
-      ? getYearlySeries(dailyUsage, POINT_COUNT.year)
-      : period === 'month'
-      ? getMonthlySeries(dailyUsage, POINT_COUNT.month)
-      : getDailySeries(dailyUsage, POINT_COUNT.day);
+  // 화면에 들어올 때 + 연/월/일 탭을 바꿀 때마다 실제 전력량계(power_monitor) 데이터를 다시 불러온다.
+  useFocusEffect(
+    useCallback(() => {
+      getEnergyUsage(period)
+        .then(setUsage)
+        .catch((err) => console.warn('에너지 사용량 조회 실패:', err));
+    }, [period])
+  );
+
+  const series = aggregateTotalSeries(usage).slice(-POINT_COUNT[period]);
   const { percent, direction } = calcChange(series);
 
   // 방이 달라도 기기 종류가 같으면 하나로 묶고, 소비전력이 큰 상위 5개만 남긴 뒤 나머지는 "기타"로 합산한다.

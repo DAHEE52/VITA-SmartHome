@@ -5,7 +5,7 @@
 // 화면을 스크롤 없이 한 번에 다 보여줘야 하므로, 화면 높이가 작은 기기(iPhone SE 등)에서도
 // 안 잘리도록 useWindowDimensions로 화면 높이를 재서 카드 padding/폰트 크기를 함께 줄이는
 // `scale` 값을 만들어 쓴다. 큰 화면에서는 scale=1(원래 크기), 작은 화면일수록 최대 22%까지 축소.
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+
+import { getHomeSummary, HomeSummary } from '../api/client';
 
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
@@ -109,11 +111,15 @@ function TimeCard({ scale }: { scale: number }) {
   );
 }
 
-// 내부 습도 / 실내 온도 / 날씨 3열 위젯
-function StatusCard({ scale }: { scale: number }) {
+// 내부 습도 / 실내 온도 / 날씨 3열 위젯.
+// 습도·온도는 /home/summary(env_presence_node 센서 실측값)를 받아 보여준다 - 값이 아직 없으면(센서
+// 미연결/조회 실패) "-"로 표시한다. 날씨는 백엔드에 대응하는 데이터가 없어 계속 고정값을 보여준다.
+function StatusCard({ scale, summary }: { scale: number; summary: HomeSummary | null }) {
   const iconWrapStyle = [styles.statusIconWrap, { height: 60 * scale, marginTop: 14 * scale }];
   const valueStyle = [styles.statusValue, { fontSize: 19 * scale, marginTop: 14 * scale }];
   const labelStyle = [styles.statusLabel, { fontSize: 16 * scale }];
+  const humidityText = summary?.humidity != null ? `${summary.humidity} %` : '-';
+  const temperatureText = summary?.temperature != null ? `${summary.temperature.toFixed(1)} °C` : '-';
   return (
     <Card style={[styles.statusCard, { padding: 20 * scale }]}>
       <View style={styles.statusRow}>
@@ -122,14 +128,14 @@ function StatusCard({ scale }: { scale: number }) {
           <View style={iconWrapStyle}>
             <DropletIcon size={48 * scale} />
           </View>
-          <Text style={valueStyle}>60 %</Text>
+          <Text style={valueStyle}>{humidityText}</Text>
         </View>
         <View style={styles.statusCol}>
           <Text style={labelStyle}>실내 온도</Text>
           <View style={iconWrapStyle}>
             <ThermometerIcon size={48 * scale} />
           </View>
-          <Text style={valueStyle}>24.0 °C</Text>
+          <Text style={valueStyle}>{temperatureText}</Text>
         </View>
         <View style={styles.statusCol}>
           <Text style={labelStyle}>날씨</Text>
@@ -392,6 +398,16 @@ export default function MainScreen() {
   // (너무 작아지면 오히려 가독성이 떨어지므로 하한선을 둠).
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
 
+  const [summary, setSummary] = useState<HomeSummary | null>(null);
+  // 화면에 들어올 때마다(다른 화면 갔다 돌아올 때 포함) 최신 센서값으로 다시 불러온다.
+  useFocusEffect(
+    useCallback(() => {
+      getHomeSummary()
+        .then(setSummary)
+        .catch((err) => console.warn('홈 요약 조회 실패:', err));
+    }, [])
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <Header scale={scale} />
@@ -399,7 +415,7 @@ export default function MainScreen() {
           paddingTop(로고 밑 첫 간격)과 gap(블록 사이 간격)을 같은 값으로 준다. */}
       <View style={[styles.middleContent, { paddingTop: BLOCK_GAP * scale, gap: BLOCK_GAP * scale }]}>
         <TimeCard scale={scale} />
-        <StatusCard scale={scale} />
+        <StatusCard scale={scale} summary={summary} />
         <GoalCard scale={scale} />
         <MenuGrid scale={scale} />
       </View>
