@@ -30,8 +30,11 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# secrets (절대 커밋 금지)
+.env
 .env*.local
+backend/.env
+firmware/*/config.h
 
 # typescript
 *.tsbuildinfo
