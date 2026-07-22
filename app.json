@@ -23,7 +23,7 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "splash": {
-        "image": "./assets/splash-icon.png",
+        "image": "./assets/icons/1-logo.png",
         "backgroundColor": "#FFFFFF",
         "resizeMode": "contain"
       }
@@ -33,7 +33,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-icon.png",
+          "image": "./assets/icons/1-logo.png",
           "imageWidth": 260,
           "resizeMode": "contain",
           "backgroundColor": "#FFFFFF"
