@@ -5,7 +5,8 @@
 // 트리거로 골라, 지정한 방의 기기를 켜고 끄거나 목표 온도를 바꾸는 규칙을 사용자가 직접 만든다.
 // 실제 발동/실행은 화면과 무관하게 AutomationContext가 계속 감시한다.
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, TextInput, ScrollView, Switch } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable, TextInput, ScrollView, Switch } from 'react-native';
+import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, fonts } from '../theme/colors';
@@ -81,7 +82,7 @@ function RuleCard({
       : null;
 
   return (
-    <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+    <AnimatedPressable activeOpacity={0.85} onPress={onPress}>
       <Card style={styles.ruleCard}>
         <View style={styles.ruleHeaderRow}>
           <Text style={styles.ruleTrigger} numberOfLines={1}>
@@ -102,7 +103,7 @@ function RuleCard({
           {describeAction(rule.action, roomLabel)}
         </Text>
       </Card>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 }
 
@@ -216,7 +217,7 @@ function RuleEditModal({
             <Text style={styles.fieldLabel}>언제 실행할까요</Text>
             <View style={styles.chipRow}>
               {TRIGGER_OPTIONS.map((opt) => (
-                <TouchableOpacity
+                <AnimatedPressable
                   key={opt.value}
                   style={[styles.chip, triggerKind === opt.value && styles.chipSelected]}
                   onPress={() => setTriggerKind(opt.value)}
@@ -225,7 +226,7 @@ function RuleEditModal({
                   <Text style={[styles.chipText, triggerKind === opt.value && styles.chipTextSelected]}>
                     {opt.label}
                   </Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               ))}
             </View>
 
@@ -235,7 +236,7 @@ function RuleEditModal({
               ) : (
                 <View style={styles.chipRowWrap}>
                   {dailyItems.map((item) => (
-                    <TouchableOpacity
+                    <AnimatedPressable
                       key={item.id}
                       style={[styles.chip, routineId === item.id && styles.chipSelected]}
                       onPress={() => setRoutineId(item.id)}
@@ -247,7 +248,7 @@ function RuleEditModal({
                       >
                         {(item.label || '(제목 없음)') + ' · ' + summarizeWeekdays(item.weekdays)}
                       </Text>
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   ))}
                 </View>
               ))}
@@ -272,7 +273,7 @@ function RuleEditModal({
             ) : (
               <View style={styles.chipRowWrap}>
                 {rooms.map((r) => (
-                  <TouchableOpacity
+                  <AnimatedPressable
                     key={r.id}
                     style={[styles.chip, roomId === r.id && styles.chipSelected]}
                     onPress={() => {
@@ -282,7 +283,7 @@ function RuleEditModal({
                     activeOpacity={0.7}
                   >
                     <Text style={[styles.chipText, roomId === r.id && styles.chipTextSelected]}>{r.label}</Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 ))}
               </View>
             )}
@@ -313,7 +314,7 @@ function RuleEditModal({
                 <Text style={styles.fieldLabel}>무엇을 할까요</Text>
                 <View style={styles.chipRow}>
                   {ACTION_OPTIONS.map((opt) => (
-                    <TouchableOpacity
+                    <AnimatedPressable
                       key={opt.value}
                       style={[styles.chip, actionKind === opt.value && styles.chipSelected]}
                       onPress={() => setActionKind(opt.value)}
@@ -322,7 +323,7 @@ function RuleEditModal({
                       <Text style={[styles.chipText, actionKind === opt.value && styles.chipTextSelected]}>
                         {opt.label}
                       </Text>
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   ))}
                 </View>
 
@@ -340,7 +341,7 @@ function RuleEditModal({
                 ) : (
                   <View style={styles.chipRowWrap}>
                     {selectedRoom.devices.map((d) => (
-                      <TouchableOpacity
+                      <AnimatedPressable
                         key={d.name}
                         style={[styles.chip, deviceName === d.name && styles.chipSelected]}
                         onPress={() => setDeviceName(d.name)}
@@ -349,7 +350,7 @@ function RuleEditModal({
                         <Text style={[styles.chipText, deviceName === d.name && styles.chipTextSelected]}>
                           {d.name}
                         </Text>
-                      </TouchableOpacity>
+                      </AnimatedPressable>
                     ))}
                   </View>
                 )}
@@ -357,18 +358,18 @@ function RuleEditModal({
             )}
 
             {onDelete && (
-              <TouchableOpacity style={styles.deleteButton} onPress={onDelete} activeOpacity={0.7}>
+              <AnimatedPressable style={styles.deleteButton} onPress={onDelete} activeOpacity={0.7}>
                 <Text style={styles.deleteButtonText}>규칙 삭제</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             )}
 
             <View style={styles.modalBottomRow}>
-              <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+              <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
                 <Text style={styles.modalCloseText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave} activeOpacity={0.7}>
+              </AnimatedPressable>
+              <AnimatedPressable style={styles.saveButton} onPress={handleSave} activeOpacity={0.7}>
                 <Text style={styles.saveButtonText}>저장</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </ScrollView>
         </Pressable>
@@ -448,14 +449,14 @@ export default function AutomationScreen() {
         )}
 
         <View style={styles.addButtonWrap}>
-          <TouchableOpacity
+          <AnimatedPressable
             style={styles.addCircle}
             activeOpacity={0.7}
             onPress={() => setIsAdding(true)}
             accessibilityLabel="자동화 규칙 추가"
           >
             <PlusIcon size={20} />
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       </ScrollView>
 

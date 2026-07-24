@@ -1,7 +1,8 @@
 // 신규 화면 - 설정.
 // 구조: 주소 등록 카드 / 글자 크기 조절 카드(가이드북 전용) / 앱 정보 카드 / 하단 네비(홈)
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, ScrollView } from 'react-native';
+import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, fonts } from '../theme/colors';
@@ -40,9 +41,9 @@ export default function SettingsScreen() {
               onSubmitEditing={saveAddress}
               returnKeyType="done"
             />
-            <TouchableOpacity style={styles.saveButton} onPress={saveAddress} activeOpacity={0.7}>
+            <AnimatedPressable style={styles.saveButton} onPress={saveAddress} activeOpacity={0.7}>
               <Text style={styles.saveButtonText}>등록</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
           {address ? (
             <Text style={styles.addressSavedText}>등록된 주소: {address}</Text>
@@ -59,7 +60,7 @@ export default function SettingsScreen() {
             {FONT_SIZE_OPTIONS.map((option) => {
               const selected = option === guidebookFontSize;
               return (
-                <TouchableOpacity
+                <AnimatedPressable
                   key={option}
                   style={[styles.fontSizeChip, selected && styles.fontSizeChipSelected]}
                   onPress={() => setGuidebookFontSize(option)}
@@ -68,7 +69,7 @@ export default function SettingsScreen() {
                   <Text style={[styles.fontSizeChipText, selected && styles.fontSizeChipTextSelected]}>
                     {FONT_SIZE_LABEL[option]}
                   </Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               );
             })}
           </View>

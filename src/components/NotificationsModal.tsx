@@ -2,7 +2,8 @@
 // 안읽은 알림은 좌측에 빨간 점으로 표시하고, 행을 누르면 읽음 처리된다.
 // 읽은 알림에만 삭제(X) 버튼이 나타난다 - 안읽은 알림은 먼저 확인해야 지울 수 있다.
 import React from 'react';
-import { Modal, Pressable, View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { Modal, Pressable, View, Text, StyleSheet, ScrollView } from 'react-native';
+import AnimatedPressable from './AnimatedPressable';
 
 import { colors, fonts } from '../theme/colors';
 import { CloseIcon } from './icons';
@@ -22,7 +23,7 @@ export default function NotificationsModal({ visible, onClose }: { visible: bool
           ) : (
             <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
               {notifications.map((n) => (
-                <TouchableOpacity
+                <AnimatedPressable
                   key={n.id}
                   style={styles.row}
                   onPress={() => markAsRead(n.id)}
@@ -35,23 +36,23 @@ export default function NotificationsModal({ visible, onClose }: { visible: bool
                     <Text style={styles.rowTime}>{n.time}</Text>
                   </View>
                   {n.read && (
-                    <TouchableOpacity
+                    <AnimatedPressable
                       style={styles.deleteButton}
                       onPress={() => deleteNotification(n.id)}
                       hitSlop={8}
                       accessibilityLabel={`${n.title} 알림 삭제`}
                     >
                       <CloseIcon size={14} color={colors.textGray} />
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   )}
-                </TouchableOpacity>
+                </AnimatedPressable>
               ))}
             </ScrollView>
           )}
 
-          <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
+          <AnimatedPressable style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
             <Text style={styles.closeButtonText}>닫기</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </Pressable>
       </Pressable>
     </Modal>

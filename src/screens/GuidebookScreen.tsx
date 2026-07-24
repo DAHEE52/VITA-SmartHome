@@ -11,7 +11,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Modal,
   Pressable,
   TextInput,
@@ -23,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
+import AnimatedPressable from '../components/AnimatedPressable';
 import { PlusIcon, CloseIcon } from '../components/icons';
 import { useSettings, FONT_SIZE_SCALE } from '../context/SettingsContext';
 
@@ -59,11 +59,11 @@ function Section({
   const styles = useGuidebookStyles();
   return (
     <Card style={styles.sectionCard}>
-      <TouchableOpacity style={styles.sectionHeader} onPress={onToggle} activeOpacity={0.7}>
+      <AnimatedPressable style={styles.sectionHeader} onPress={onToggle} activeOpacity={0.7}>
         <Text style={styles.sectionIcon}>{icon}</Text>
         <Text style={styles.sectionTitle}>{title}</Text>
         <Text style={styles.sectionChevron}>{isOpen ? '▲' : '▼'}</Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
       {isOpen && <View style={styles.sectionBody}>{children}</View>}
     </Card>
   );
@@ -114,12 +114,12 @@ function ChecklistRow({
 }) {
   const styles = useGuidebookStyles();
   return (
-    <TouchableOpacity style={styles.checklistRow} onPress={onToggle} activeOpacity={0.7}>
+    <AnimatedPressable style={styles.checklistRow} onPress={onToggle} activeOpacity={0.7}>
       <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
         {checked && <Text style={styles.checkboxMark}>✓</Text>}
       </View>
       <Text style={[styles.checklistLabel, checked && styles.checklistLabelChecked]}>{label}</Text>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 }
 
@@ -203,12 +203,12 @@ function AddContactModal({
           </View>
 
           <View style={styles.modalBottomRow}>
-            <TouchableOpacity style={styles.modalCloseButton} onPress={handleClose} activeOpacity={0.7}>
+            <AnimatedPressable style={styles.modalCloseButton} onPress={handleClose} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>취소</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.modalSaveButton} onPress={handleSubmit} activeOpacity={0.7}>
+            </AnimatedPressable>
+            <AnimatedPressable style={styles.modalSaveButton} onPress={handleSubmit} activeOpacity={0.7}>
               <Text style={styles.modalSaveText}>등록</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </Pressable>
       </Pressable>
@@ -441,21 +441,21 @@ export default function GuidebookScreen() {
           isOpen={!!openSections.contacts}
           onToggle={() => toggleSection('contacts')}
         >
-          <TouchableOpacity style={styles.emergencyRow} onPress={() => callNumber('119')} activeOpacity={0.7}>
+          <AnimatedPressable style={styles.emergencyRow} onPress={() => callNumber('119')} activeOpacity={0.7}>
             <Text style={styles.emergencyIcon}>🚒</Text>
             <View style={styles.emergencyTextGroup}>
               <Text style={styles.emergencyName}>119 · 화재/응급 신고</Text>
             </View>
             <Text style={styles.callText}>전화</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
 
-          <TouchableOpacity style={styles.emergencyRow} onPress={() => callNumber('112')} activeOpacity={0.7}>
+          <AnimatedPressable style={styles.emergencyRow} onPress={() => callNumber('112')} activeOpacity={0.7}>
             <Text style={styles.emergencyIcon}>🚓</Text>
             <View style={styles.emergencyTextGroup}>
               <Text style={styles.emergencyName}>112 · 경찰 신고</Text>
             </View>
             <Text style={styles.callText}>전화</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
 
           <Text style={styles.contactGroupTitle}>가족 비상 연락처</Text>
           {familyContacts.length === 0 && (
@@ -468,27 +468,27 @@ export default function GuidebookScreen() {
                 <Text style={styles.emergencyName}>{c.name}</Text>
                 <Text style={styles.emergencyPhone}>{c.phone}</Text>
               </View>
-              <TouchableOpacity onPress={() => callNumber(c.phone)} hitSlop={8}>
+              <AnimatedPressable onPress={() => callNumber(c.phone)} hitSlop={8}>
                 <Text style={styles.callText}>전화</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </AnimatedPressable>
+              <AnimatedPressable
                 style={styles.contactDeleteButton}
                 onPress={() => removeFamilyContact(c.id)}
                 hitSlop={8}
                 accessibilityLabel={`${c.name} 연락처 삭제`}
               >
                 <CloseIcon size={14} color={colors.textGray} />
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           ))}
-          <TouchableOpacity
+          <AnimatedPressable
             style={styles.addContactButton}
             onPress={() => setAddContactVisible(true)}
             activeOpacity={0.7}
           >
             <PlusIcon size={14} />
             <Text style={styles.addContactButtonText}>가족 연락처 추가</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
 
           <Text style={styles.contactGroupTitle}>경비실 / 관리사무소</Text>
           <View style={styles.guardRow}>
@@ -502,9 +502,9 @@ export default function GuidebookScreen() {
               keyboardType="phone-pad"
             />
             {!!guardPhone && (
-              <TouchableOpacity onPress={() => callNumber(guardPhone)} hitSlop={8}>
+              <AnimatedPressable onPress={() => callNumber(guardPhone)} hitSlop={8}>
                 <Text style={styles.callText}>전화</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             )}
           </View>
         </Section>

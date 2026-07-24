@@ -43,7 +43,7 @@ export default function RootNavigator() {
         initialRouteName="Splash"
         // 시안에 자체 헤더(뒤로가기 화살표 등)가 이미 그려져 있으므로
         // 네비게이션 라이브러리의 기본 헤더는 끄고 화면마다 직접 그린다.
-        screenOptions={{ headerShown: false, animation: 'fade' }}
+        screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
       >
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Main" component={MainScreen} />

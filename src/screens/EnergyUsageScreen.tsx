@@ -8,7 +8,8 @@
 // 조명), 소비전력 상위 5개 종류만 보여준 뒤 나머지는 "기타"로 합산한다(summarizeDeviceUsage,
 // RoomsContext의 로컬 방/기기 목록 기준 - 방/기기 관리는 아직 백엔드에 연동되지 않았다).
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Line, Polyline, Circle, Text as SvgText } from 'react-native-svg';
@@ -92,7 +93,7 @@ function TopStatCard({
         {PERIOD_TABS.map((t) => {
           const selected = t.key === period;
           return (
-            <TouchableOpacity
+            <AnimatedPressable
               key={t.key}
               onPress={() => onSelectPeriod(t.key)}
               activeOpacity={0.7}
@@ -103,7 +104,7 @@ function TopStatCard({
               ]}
             >
               <Text style={[styles.tabChipText, { fontSize: 14 * scale }]}>{t.label}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           );
         })}
       </View>

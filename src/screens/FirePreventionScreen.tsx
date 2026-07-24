@@ -15,7 +15,8 @@
 // 막음), "119 신고" 버튼은 전화 앱을 119가 입력된 채로 열어줄 뿐 - 실제 발신은 사용자가 통화 버튼을
 // 눌러야 이뤄진다.
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Linking } from 'react-native';
+import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, fonts } from '../theme/colors';
@@ -106,12 +107,12 @@ function EmergencyBanner({ reason, onDismiss }: { reason: string; onDismiss: () 
     <Card style={styles.emergencyCard}>
       <Text style={styles.emergencyTitle}>🚨 화재 위험 감지</Text>
       <Text style={styles.emergencyBody}>{reason}</Text>
-      <TouchableOpacity style={styles.emergencyCallButton} onPress={callEmergency} activeOpacity={0.7}>
+      <AnimatedPressable style={styles.emergencyCallButton} onPress={callEmergency} activeOpacity={0.7}>
         <Text style={styles.emergencyCallButtonText}>📞 119 신고하기</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.emergencyDismissButton} onPress={onDismiss} activeOpacity={0.7}>
+      </AnimatedPressable>
+      <AnimatedPressable style={styles.emergencyDismissButton} onPress={onDismiss} activeOpacity={0.7}>
         <Text style={styles.emergencyDismissButtonText}>괜찮아요, 확인했어요</Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
     </Card>
   );
 }
@@ -187,7 +188,7 @@ function RoomRiskCard({
         {onDevices.length > 0 ? `켜진 기기: ${onDevices.map((d) => d.name).join(', ')}` : '켜진 기기가 없어요.'}
       </Text>
 
-      <TouchableOpacity
+      <AnimatedPressable
         style={[styles.simulateButton, isSimulating && styles.simulateButtonActive]}
         onPress={onToggleSimulate}
         activeOpacity={0.7}
@@ -195,7 +196,7 @@ function RoomRiskCard({
         <Text style={[styles.simulateButtonText, isSimulating && styles.simulateButtonTextActive]}>
           {isSimulating ? '화재 상황 시뮬레이션 해제' : '화재 상황 시뮬레이션 (테스트)'}
         </Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
     </Card>
   );
 }

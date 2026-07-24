@@ -10,7 +10,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Modal,
   Pressable,
   TextInput,
@@ -18,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import AnimatedPressable from '../components/AnimatedPressable';
 
 import { getHomeSummary, HomeSummary } from '../api/client';
 
@@ -67,16 +67,16 @@ function Header({ scale }: { scale: number }) {
     <View style={[styles.header, { paddingTop: 6 * scale, paddingBottom: 0 }]}>
       <VitaLogo size={HEADER_ICON_SIZE} />
       <View style={styles.headerIcons}>
-        <TouchableOpacity hitSlop={12} onPress={() => setMenuVisible(true)}>
+        <AnimatedPressable hitSlop={12} onPress={() => setMenuVisible(true)}>
           <MenuIcon size={HEADER_ICON_SIZE} />
-        </TouchableOpacity>
-        <TouchableOpacity hitSlop={12} onPress={() => setNotificationsVisible(true)} style={styles.bellWrap}>
+        </AnimatedPressable>
+        <AnimatedPressable hitSlop={12} onPress={() => setNotificationsVisible(true)} style={styles.bellWrap}>
           <BellIcon size={HEADER_ICON_SIZE} />
           {unreadCount > 0 && <View style={styles.unreadBadge} />}
-        </TouchableOpacity>
-        <TouchableOpacity hitSlop={12} onPress={() => navigation.navigate('Settings')}>
+        </AnimatedPressable>
+        <AnimatedPressable hitSlop={12} onPress={() => navigation.navigate('Settings')}>
           <GearIcon size={HEADER_ICON_SIZE} />
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
       <MenuModal visible={menuVisible} onClose={() => setMenuVisible(false)} />
       <NotificationsModal visible={notificationsVisible} onClose={() => setNotificationsVisible(false)} />
@@ -194,7 +194,7 @@ function HouseholdPickerModal({
             {HOUSEHOLD_OPTIONS.map(({ size, label }) => {
               const isSelected = size === selected;
               return (
-                <TouchableOpacity
+                <AnimatedPressable
                   key={size}
                   style={[styles.householdRow, isSelected && styles.householdRowSelected]}
                   onPress={() => onSelect(size)}
@@ -208,17 +208,17 @@ function HouseholdPickerModal({
                   <Text style={[styles.householdRowSub, isSelected && styles.householdRowTextSelected]}>
                     목표 {defaultGoalFor(size)}kWh/월
                   </Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               );
             })}
           </View>
-          <TouchableOpacity
+          <AnimatedPressable
             style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
             onPress={onClose}
             activeOpacity={0.7}
           >
             <Text style={styles.modalCloseText}>닫기</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -274,16 +274,16 @@ function GoalEditModal({
             />
             <Text style={styles.goalEditUnit}>kWh / 월</Text>
           </View>
-          <TouchableOpacity onPress={handleReset} activeOpacity={0.7}>
+          <AnimatedPressable onPress={handleReset} activeOpacity={0.7}>
             <Text style={styles.goalResetText}>절전 목표 삭제(초기화)</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
           <View style={styles.modalBottomRow}>
-            <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+            <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>취소</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.renameSaveButtonWide} onPress={handleSave} activeOpacity={0.7}>
+            </AnimatedPressable>
+            <AnimatedPressable style={styles.renameSaveButtonWide} onPress={handleSave} activeOpacity={0.7}>
               <Text style={styles.renameSaveText}>저장</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </Pressable>
       </Pressable>
@@ -305,7 +305,7 @@ function GoalCard({ scale }: { scale: number }) {
 
   return (
     <>
-      <TouchableOpacity activeOpacity={0.85} onPress={() => setPickerVisible(true)}>
+      <AnimatedPressable activeOpacity={0.85} onPress={() => setPickerVisible(true)}>
         <Card style={[styles.goalCard, { padding: 20 * scale }]}>
           <View style={styles.goalTitleRow}>
             <BoltOutlineIcon size={22 * scale} />
@@ -332,13 +332,13 @@ function GoalCard({ scale }: { scale: number }) {
           {goalKwh != null && (
             <View style={[styles.goalMetaRow, { marginTop: 6 * scale }]}>
               <Text style={[styles.goalKwhText, { fontSize: 13 * scale }]}>목표 {goalKwh}kWh/월</Text>
-              <TouchableOpacity hitSlop={10} onPress={() => setEditVisible(true)}>
+              <AnimatedPressable hitSlop={10} onPress={() => setEditVisible(true)}>
                 <Text style={[styles.goalEditText, { fontSize: 13 * scale }]}>수정</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           )}
         </Card>
-      </TouchableOpacity>
+      </AnimatedPressable>
 
       <HouseholdPickerModal
         visible={pickerVisible}
@@ -379,14 +379,14 @@ function MenuGrid({ scale }: { scale: number }) {
   return (
     <View style={[styles.menuRow, { gap: MENU_GAP }]}>
       {items.map(({ label, Icon, route }) => (
-        <TouchableOpacity
+        <AnimatedPressable
           key={label}
           style={[styles.menuItem, { width: cellSize, height: cellSize, gap: 10 * scale }]}
           onPress={() => navigation.navigate(route)}
         >
           <Icon size={54 * scale} />
           <Text style={[styles.menuLabel, { fontSize: 12 * scale }]}>{label}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       ))}
     </View>
   );

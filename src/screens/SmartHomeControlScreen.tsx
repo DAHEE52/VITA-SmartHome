@@ -5,7 +5,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Modal,
   Pressable,
   TextInput,
@@ -17,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
+import AnimatedPressable from '../components/AnimatedPressable';
 import { PlusIcon, CloseIcon } from '../components/icons';
 import { useRooms, Room, MAX_ROOMS } from '../context/RoomsContext';
 
@@ -54,7 +54,7 @@ function RoomCard({
   onOpenSettings: () => void;
 }) {
   return (
-    <TouchableOpacity
+    <AnimatedPressable
       style={[styles.gridCell, styles.roomCard, { width: cellSize, height: cellSize }]}
       onPress={onOpenSettings}
       activeOpacity={0.8}
@@ -62,7 +62,7 @@ function RoomCard({
     >
       {onCount > 0 && <View style={styles.activeDot} />}
       <Text style={[styles.roomLabel, { fontSize: 20 * scale }]}>{label}</Text>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 }
 
@@ -132,16 +132,16 @@ function RoomSettingsModal({
               <Text style={styles.modalTitle}>{room?.label} 방을 삭제할까요?</Text>
               <Text style={styles.confirmSubtitle}>삭제하면 되돌릴 수 없어요.</Text>
               <View style={styles.modalBottomRow}>
-                <TouchableOpacity
+                <AnimatedPressable
                   style={styles.modalCloseButton}
                   onPress={() => setConfirmDelete(false)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.modalCloseText}>취소</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.deleteButton} onPress={handleConfirmDelete} activeOpacity={0.7}>
+                </AnimatedPressable>
+                <AnimatedPressable style={styles.deleteButton} onPress={handleConfirmDelete} activeOpacity={0.7}>
                   <Text style={styles.deleteButtonText}>삭제</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </View>
             </>
           ) : confirmDeleteDevice ? (
@@ -149,20 +149,20 @@ function RoomSettingsModal({
               <Text style={styles.modalTitle}>{confirmDeleteDevice} 기기를 삭제할까요?</Text>
               <Text style={styles.confirmSubtitle}>삭제하면 되돌릴 수 없어요.</Text>
               <View style={styles.modalBottomRow}>
-                <TouchableOpacity
+                <AnimatedPressable
                   style={styles.modalCloseButton}
                   onPress={() => setConfirmDeleteDevice(null)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.modalCloseText}>취소</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                </AnimatedPressable>
+                <AnimatedPressable
                   style={styles.deleteButton}
                   onPress={handleConfirmDeleteDevice}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.deleteButtonText}>삭제</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </View>
             </>
           ) : (
@@ -179,15 +179,15 @@ function RoomSettingsModal({
                   placeholderTextColor={colors.textGray}
                   returnKeyType="done"
                 />
-                <TouchableOpacity style={styles.renameSaveButton} onPress={handleSave} activeOpacity={0.7}>
+                <AnimatedPressable style={styles.renameSaveButton} onPress={handleSave} activeOpacity={0.7}>
                   <Text style={styles.renameSaveText}>저장</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </View>
 
               <View style={styles.tempRow}>
                 <Text style={styles.tempLabel}>목표 온도</Text>
                 <View style={styles.tempStepperRow}>
-                  <TouchableOpacity
+                  <AnimatedPressable
                     style={styles.tempStepButton}
                     onPress={() =>
                       room && onSetTargetTemp(room.id, Math.max(MIN_TARGET_TEMP, room.targetTemp - 1))
@@ -196,9 +196,9 @@ function RoomSettingsModal({
                     hitSlop={8}
                   >
                     <Text style={styles.tempStepText}>−</Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                   <Text style={styles.tempValue}>{room?.targetTemp ?? 24}°C</Text>
-                  <TouchableOpacity
+                  <AnimatedPressable
                     style={styles.tempStepButton}
                     onPress={() =>
                       room && onSetTargetTemp(room.id, Math.min(MAX_TARGET_TEMP, room.targetTemp + 1))
@@ -207,7 +207,7 @@ function RoomSettingsModal({
                     hitSlop={8}
                   >
                     <Text style={styles.tempStepText}>＋</Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 </View>
               </View>
 
@@ -220,7 +220,7 @@ function RoomSettingsModal({
                 <View key={d.name} style={styles.deviceRow}>
                   <Text style={styles.deviceName}>{d.name}</Text>
                   <View style={styles.deviceControls}>
-                    <TouchableOpacity
+                    <AnimatedPressable
                       style={[styles.modeToggle, d.mode === 'manual' && styles.modeToggleManual]}
                       onPress={() => room && onToggleDeviceMode(room.id, d.name)}
                       activeOpacity={0.7}
@@ -233,10 +233,10 @@ function RoomSettingsModal({
                       >
                         {d.mode === 'auto' ? '자동' : '수동'}
                       </Text>
-                    </TouchableOpacity>
+                    </AnimatedPressable>
 
                     {d.mode === 'manual' ? (
-                      <TouchableOpacity
+                      <AnimatedPressable
                         style={[styles.statusBadge, d.on ? styles.statusOn : styles.statusOff]}
                         onPress={() => room && onToggleDevicePower(room.id, d.name)}
                         activeOpacity={0.7}
@@ -244,7 +244,7 @@ function RoomSettingsModal({
                         <Text style={[styles.statusText, d.on ? styles.statusTextOn : styles.statusTextOff]}>
                           {d.on ? 'ON' : 'OFF'}
                         </Text>
-                      </TouchableOpacity>
+                      </AnimatedPressable>
                     ) : (
                       <View style={[styles.statusBadge, d.on ? styles.statusOn : styles.statusOff]}>
                         <Text style={[styles.statusText, d.on ? styles.statusTextOn : styles.statusTextOff]}>
@@ -253,7 +253,7 @@ function RoomSettingsModal({
                       </View>
                     )}
 
-                    <TouchableOpacity
+                    <AnimatedPressable
                       style={styles.deviceDeleteButton}
                       onPress={() => setConfirmDeleteDevice(d.name)}
                       hitSlop={8}
@@ -261,30 +261,30 @@ function RoomSettingsModal({
                       accessibilityLabel={`${d.name} 기기 삭제`}
                     >
                       <CloseIcon size={14} color={colors.textGray} />
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   </View>
                 </View>
               ))}
 
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.addDeviceInModalButton}
                 onPress={() => room && onAddDevice(room.id)}
                 activeOpacity={0.7}
               >
                 <Text style={styles.addDeviceInModalText}>기기 추가</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
               <View style={styles.modalBottomRow}>
-                <TouchableOpacity
+                <AnimatedPressable
                   style={styles.deleteButton}
                   onPress={() => setConfirmDelete(true)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.deleteButtonText}>방 삭제</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+                </AnimatedPressable>
+                <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
                   <Text style={styles.modalCloseText}>닫기</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </View>
             </>
           )}
@@ -299,14 +299,14 @@ function AddRoomButton({ scale, cellSize, onPress }: { scale: number; cellSize: 
   const size = 56 * scale;
   return (
     <View style={[styles.gridCell, { width: cellSize, height: cellSize }]}>
-      <TouchableOpacity
+      <AnimatedPressable
         style={[styles.addCircle, { width: size, height: size, borderRadius: size / 2 }]}
         activeOpacity={0.7}
         onPress={onPress}
         accessibilityLabel="방 추가"
       >
         <PlusIcon size={24 * scale} />
-      </TouchableOpacity>
+      </AnimatedPressable>
     </View>
   );
 }
@@ -354,12 +354,12 @@ function AddDeviceModal({
           </View>
 
           <View style={styles.modalBottomRow}>
-            <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+            <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>취소</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.renameSaveButtonWide} onPress={handleSubmit} activeOpacity={0.7}>
+            </AnimatedPressable>
+            <AnimatedPressable style={styles.renameSaveButtonWide} onPress={handleSubmit} activeOpacity={0.7}>
               <Text style={styles.renameSaveText}>등록</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </Pressable>
       </Pressable>

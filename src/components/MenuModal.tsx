@@ -2,7 +2,8 @@
 // 앱에 구현되어 있는 화면(홈/스마트홈 제어/캘린더/에너지 사용량/에너지 나무/화재 예방 시스템/
 // 안전 가이드북/전기요금 영수증 미리보기/설정)으로 바로 이동할 수 있는 버튼을 한 곳에 모아둔다.
 import React from 'react';
-import { Modal, Pressable, View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, Pressable, View, Text, Image, StyleSheet } from 'react-native';
+import AnimatedPressable from './AnimatedPressable';
 import { useNavigation } from '@react-navigation/native';
 
 import { colors, fonts } from '../theme/colors';
@@ -108,7 +109,7 @@ export default function MenuModal({ visible, onClose }: { visible: boolean; onCl
         <Pressable style={styles.panel} onPress={() => {}}>
           <Text style={styles.title}>메뉴</Text>
           {MENU_ITEMS.map((item, i) => (
-            <TouchableOpacity
+            <AnimatedPressable
               key={item.key}
               style={[styles.row, i === MENU_ITEMS.length - 1 && styles.rowLast]}
               onPress={() => goTo(item.route)}
@@ -116,7 +117,7 @@ export default function MenuModal({ visible, onClose }: { visible: boolean; onCl
             >
               <View style={styles.iconWrap}>{item.renderIcon()}</View>
               <Text style={styles.rowLabel}>{item.label}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           ))}
         </Pressable>
       </Pressable>

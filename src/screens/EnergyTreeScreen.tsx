@@ -12,7 +12,8 @@
 // "그 달의 숲"과 "성장 트래커"는 둘 다 화면에 항상 박혀 있지 않고 버튼을 눌러야 뜨는 팝업(Modal)이다.
 // 숲은 이 탭에 들어왔을 때 마침 오늘이 그 달의 마지막 날이면 버튼 없이도 자동으로 한 번 뜬다.
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable, useWindowDimensions } from 'react-native';
+import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -164,7 +165,7 @@ function DayGrid({
         const hasData = hasUsageData(dailyUsage, year, month0, day);
         const isSelected = day === selectedDay;
         return (
-          <TouchableOpacity
+          <AnimatedPressable
             key={day}
             style={[styles.dayCell, isSelected && styles.dayCellSelected]}
             onPress={() => onSelectDay(day)}
@@ -172,7 +173,7 @@ function DayGrid({
           >
             {hasData && <View style={[styles.dayGrowthDot, { opacity: Math.max(0.12, g) }]} />}
             <Text style={styles.dayNumberText}>{day}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         );
       })}
     </View>
@@ -212,15 +213,15 @@ function DatePickerModal({
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => {}}>
           <View style={styles.monthNavRow}>
-            <TouchableOpacity onPress={() => onChangeMonth(-1)} hitSlop={10}>
+            <AnimatedPressable onPress={() => onChangeMonth(-1)} hitSlop={10}>
               <Text style={styles.navArrow}>‹</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
             <Text style={styles.monthTitle}>
               {year}년 {month0 + 1}월
             </Text>
-            <TouchableOpacity onPress={() => onChangeMonth(1)} hitSlop={10}>
+            <AnimatedPressable onPress={() => onChangeMonth(1)} hitSlop={10}>
               <Text style={styles.navArrow}>›</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
 
           <View style={styles.weekdayRow}>
@@ -240,9 +241,9 @@ function DatePickerModal({
             onSelectDay={onSelectDay}
           />
 
-          <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+          <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
             <Text style={styles.modalCloseText}>닫기</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -325,9 +326,9 @@ function ForestModal({
             })}
           </View>
 
-          <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+          <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
             <Text style={styles.modalCloseText}>닫기</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -382,9 +383,9 @@ function TrackerModal({
               onClose();
             }}
           />
-          <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+          <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
             <Text style={styles.modalCloseText}>닫기</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -495,12 +496,12 @@ export default function EnergyTreeScreen() {
       <View style={[styles.content, { paddingTop: 16 * scale }]}>
         <SectionPill label="에너지 나무" scale={scale} />
 
-        <TouchableOpacity onPress={openPicker} activeOpacity={0.7} style={styles.dateHeaderWrap}>
+        <AnimatedPressable onPress={openPicker} activeOpacity={0.7} style={styles.dateHeaderWrap}>
           <Text style={[styles.dateHeaderText, { fontSize: 16 * scale }]}>
             {year}년 {month0 + 1}월 {day}일
           </Text>
           <Text style={[styles.dateHeaderHint, { fontSize: 12 * scale }]}>탭해서 날짜 변경</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
 
         {/* 버튼 행 위치(topSpacer+middleSpacer 합)는 고정한 채, topSpacer를 늘리고 middleSpacer를
             그만큼 줄여서 화분(오늘 성장률)만 아래로 내리고 그 아래 공백을 조금 줄였다. */}
@@ -512,16 +513,16 @@ export default function EnergyTreeScreen() {
         <View style={{ flex: 0.7 }} />
 
         <View style={[styles.actionButtonRow, { marginBottom: 14 * scale, gap: 10 * scale }]}>
-          <TouchableOpacity
+          <AnimatedPressable
             style={styles.actionButton}
             onPress={() => setForestMonth({ year, month0 })}
             activeOpacity={0.7}
           >
             <Text style={[styles.actionButtonText, { fontSize: 14 * scale }]}>🌲 {month0 + 1}월 숲 보기</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={() => setTrackerVisible(true)} activeOpacity={0.7}>
+          </AnimatedPressable>
+          <AnimatedPressable style={styles.actionButton} onPress={() => setTrackerVisible(true)} activeOpacity={0.7}>
             <Text style={[styles.actionButtonText, { fontSize: 14 * scale }]}>🌱 성장 트래커</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
 
         <StatRow savedKwh={monthSavedKwh} scale={scale} />

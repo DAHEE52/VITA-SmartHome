@@ -9,7 +9,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Modal,
   Pressable,
   TextInput,
@@ -18,6 +17,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AnimatedPressable from '../components/AnimatedPressable';
 
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
@@ -65,7 +65,7 @@ function KindChipRow({ value, onChange }: { value: SpecialKind; onChange: (k: Sp
   return (
     <View style={styles.kindChipRow}>
       {KIND_OPTIONS.map((opt) => (
-        <TouchableOpacity
+        <AnimatedPressable
           key={opt.value}
           style={[styles.kindChip, value === opt.value && styles.kindChipSelected]}
           onPress={() => onChange(opt.value)}
@@ -74,7 +74,7 @@ function KindChipRow({ value, onChange }: { value: SpecialKind; onChange: (k: Sp
           <Text style={[styles.kindChipText, value === opt.value && styles.kindChipTextSelected]}>
             {opt.label}
           </Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       ))}
     </View>
   );
@@ -96,14 +96,14 @@ function WeekdayChipRow({ value, onChange }: { value: number[]; onChange: (weekd
       {WEEKDAY_SHORT.map((label, day) => {
         const selected = value.includes(day);
         return (
-          <TouchableOpacity
+          <AnimatedPressable
             key={day}
             style={[styles.weekdayChip, selected && styles.weekdayChipSelected]}
             onPress={() => toggle(day)}
             activeOpacity={0.7}
           >
             <Text style={[styles.weekdayChipText, selected && styles.weekdayChipTextSelected]}>{label}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         );
       })}
     </View>
@@ -191,7 +191,7 @@ function DateGrid({
         return (
           <View key={i} style={[styles.dateCell, { height: 46 * scale }]}>
             {day !== null && (
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.dateCellTouchable}
                 activeOpacity={0.7}
                 onPress={() => onSelectDay(day)}
@@ -227,7 +227,7 @@ function DateGrid({
                     ]}
                   />
                 )}
-              </TouchableOpacity>
+              </AnimatedPressable>
             )}
           </View>
         );
@@ -278,13 +278,13 @@ function ScheduleRow({
 function AddButton({ scale, onPress }: { scale: number; onPress: () => void }) {
   const size = 38 * scale;
   return (
-    <TouchableOpacity
+    <AnimatedPressable
       style={[styles.addCircle, { width: size, height: size, borderRadius: size / 2 }]}
       activeOpacity={0.7}
       onPress={onPress}
     >
       <PlusIcon size={18 * scale} />
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 }
 
@@ -306,13 +306,13 @@ function SectionTitle({
     <View style={[styles.sectionTitleRow, { marginTop: 12 * scale, marginBottom: 6 * scale }]}>
       <Text style={[styles.sectionTitle, { fontSize: 17 * scale }]}>{label}</Text>
       {showSettings && (
-        <TouchableOpacity
+        <AnimatedPressable
           onPress={onOpenSettings}
           hitSlop={10}
           accessibilityLabel={`${label} 일정 수정`}
         >
           <EllipsisIcon size={20 * scale} />
-        </TouchableOpacity>
+        </AnimatedPressable>
       )}
     </View>
   );
@@ -345,21 +345,21 @@ function DatePickerModal({
           <Text style={styles.modalTitle}>날짜 선택</Text>
 
           <View style={styles.yearStepperRow}>
-            <TouchableOpacity
+            <AnimatedPressable
               style={styles.yearStepButton}
               onPress={() => setDraftYear((y) => y - 1)}
               hitSlop={10}
             >
               <Text style={styles.yearStepText}>‹</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
             <Text style={styles.yearStepperLabel}>{draftYear}</Text>
-            <TouchableOpacity
+            <AnimatedPressable
               style={styles.yearStepButton}
               onPress={() => setDraftYear((y) => y + 1)}
               hitSlop={10}
             >
               <Text style={styles.yearStepText}>›</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
 
           <View style={styles.monthGrid}>
@@ -367,7 +367,7 @@ function DatePickerModal({
               const m = i + 1;
               const isSelected = draftYear === year && m === month;
               return (
-                <TouchableOpacity
+                <AnimatedPressable
                   key={label}
                   style={[styles.monthGridCell, isSelected && styles.monthGridCellSelected]}
                   onPress={() => {
@@ -381,18 +381,18 @@ function DatePickerModal({
                   >
                     {label}
                   </Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               );
             })}
           </View>
 
-          <TouchableOpacity
+          <AnimatedPressable
             style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
             onPress={onClose}
             activeOpacity={0.7}
           >
             <Text style={styles.modalCloseText}>닫기</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -551,20 +551,20 @@ function TimePickerModal({
           <Text style={styles.modalTitle}>시간 선택</Text>
 
           <View style={styles.ampmRow}>
-            <TouchableOpacity
+            <AnimatedPressable
               style={[styles.ampmChip, !isPM && styles.ampmChipSelected]}
               onPress={() => setIsPM(false)}
               activeOpacity={0.7}
             >
               <Text style={[styles.ampmChipText, !isPM && styles.ampmChipTextSelected]}>오전</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </AnimatedPressable>
+            <AnimatedPressable
               style={[styles.ampmChip, isPM && styles.ampmChipSelected]}
               onPress={() => setIsPM(true)}
               activeOpacity={0.7}
             >
               <Text style={[styles.ampmChipText, isPM && styles.ampmChipTextSelected]}>오후</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
 
           <View style={styles.wheelRow}>
@@ -574,7 +574,7 @@ function TimePickerModal({
             <DigitWheel value={mOnes} options={MINUTE_ONES_OPTIONS} onChange={setMOnes} />
           </View>
 
-          <TouchableOpacity
+          <AnimatedPressable
             style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
             onPress={() => {
               onConfirm(draftHour, draftMinute);
@@ -583,7 +583,7 @@ function TimePickerModal({
             activeOpacity={0.7}
           >
             <Text style={styles.modalCloseText}>확인</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -659,7 +659,7 @@ function ScheduleEditModal({
                       keyboardType="number-pad"
                     />
                   )}
-                  <TouchableOpacity
+                  <AnimatedPressable
                     style={styles.editTimeButton}
                     onPress={() => setEditingTimeId(item.id)}
                     activeOpacity={0.7}
@@ -670,7 +670,7 @@ function ScheduleEditModal({
                     >
                       {item.time || '시간'}
                     </Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                   <TextInput
                     style={styles.editLabelInput}
                     value={item.label}
@@ -678,9 +678,9 @@ function ScheduleEditModal({
                     placeholder="내용"
                     placeholderTextColor={colors.textGray}
                   />
-                  <TouchableOpacity onPress={() => removeItem(item.id)} hitSlop={10}>
+                  <AnimatedPressable onPress={() => removeItem(item.id)} hitSlop={10}>
                     <Text style={styles.editRemoveText}>×</Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 </View>
                 {isSpecial ? (
                   <KindChipRow value={item.kind ?? 'general'} onChange={(k) => updateItem(item.id, { kind: k })} />
@@ -695,12 +695,12 @@ function ScheduleEditModal({
           </ScrollView>
 
           <View style={styles.modalBottomRow}>
-            <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+            <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>취소</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.renameSaveButtonWide} onPress={handleSave} activeOpacity={0.7}>
+            </AnimatedPressable>
+            <AnimatedPressable style={styles.renameSaveButtonWide} onPress={handleSave} activeOpacity={0.7}>
               <Text style={styles.renameSaveText}>저장</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </Pressable>
       </Pressable>
@@ -792,7 +792,7 @@ function AddScheduleModal({
                 keyboardType="number-pad"
               />
             )}
-            <TouchableOpacity
+            <AnimatedPressable
               style={styles.editTimeButton}
               onPress={() => setTimePickerVisible(true)}
               activeOpacity={0.7}
@@ -803,7 +803,7 @@ function AddScheduleModal({
               >
                 {time || '시간'}
               </Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
             <TextInput
               style={styles.editLabelInput}
               value={label}
@@ -820,12 +820,12 @@ function AddScheduleModal({
           )}
 
           <View style={styles.modalBottomRow}>
-            <TouchableOpacity style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+            <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>취소</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.renameSaveButtonWide} onPress={handleAdd} activeOpacity={0.7}>
+            </AnimatedPressable>
+            <AnimatedPressable style={styles.renameSaveButtonWide} onPress={handleAdd} activeOpacity={0.7}>
               <Text style={styles.renameSaveText}>추가</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </Pressable>
       </Pressable>
@@ -881,13 +881,13 @@ export default function CalendarScreen() {
       <View style={[styles.content, { paddingTop: 16 * scale }]}>
         <View style={styles.titleRow}>
           <View style={styles.titleSide}>
-            <TouchableOpacity onPress={() => setPickerVisible(true)} activeOpacity={0.7}>
+            <AnimatedPressable onPress={() => setPickerVisible(true)} activeOpacity={0.7}>
               <Text style={[styles.yearText, { fontSize: 26 * scale }]}>{viewYear}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
-          <TouchableOpacity onPress={() => setPickerVisible(true)} activeOpacity={0.7}>
+          <AnimatedPressable onPress={() => setPickerVisible(true)} activeOpacity={0.7}>
             <Text style={[styles.monthText, { fontSize: 36 * scale }]}>{monthLabel}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
           <View style={styles.titleSide} />
         </View>
 
