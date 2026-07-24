@@ -25,6 +25,50 @@ export type RoomStatus = {
   devices: DeviceStatus[];
 };
 
+// --- 방(rooms)/기기(devices) 관리 — RoomsContext가 사용 ---
+
+export type RoomWithDevices = {
+  id: number;
+  name: string;
+  devices: DeviceStatus[];
+};
+
+export type DeviceOut = {
+  id: string;
+  label: string | null;
+  type: DeviceType;
+  state: string;
+  room_id: number | null;
+};
+
+export function getRooms(): Promise<RoomWithDevices[]> {
+  return request<RoomWithDevices[]>('/rooms');
+}
+
+export function createRoom(name: string): Promise<{ id: number; name: string }> {
+  return request('/rooms', { method: 'POST', body: JSON.stringify({ name }) });
+}
+
+export function renameRoom(roomId: number, name: string): Promise<{ id: number; name: string }> {
+  return request(`/rooms/${roomId}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+}
+
+export function deleteRoom(roomId: number): Promise<{ ok: boolean }> {
+  return request(`/rooms/${roomId}`, { method: 'DELETE' });
+}
+
+// 실제 ESP32 없이 /devices/register가 하는 일을 흉내내는 프로토타입 전용 엔드포인트.
+export function mockRegisterDevice(name?: string): Promise<DeviceOut> {
+  return request('/devices/mock-register', { method: 'POST', body: JSON.stringify(name ? { name } : {}) });
+}
+
+export function updateDevice(
+  deviceId: string,
+  body: { name?: string; room_id?: number | null }
+): Promise<DeviceOut> {
+  return request(`/devices/${deviceId}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
 export type SeriesPoint = {
   x_label: string;
   value: number;

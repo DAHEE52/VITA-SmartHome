@@ -1,12 +1,29 @@
+import uuid
 from datetime import datetime, timezone
 from statistics import mean
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
-from app.schemas import ControlRequest, DeviceStatus, HomeSummary, RoomStatus
+from app.schemas import (
+    ControlRequest,
+    DeviceOut,
+    DeviceStatus,
+    DeviceUpdate,
+    HomeSummary,
+    MockDeviceRegister,
+    RoomCreate,
+    RoomCreated,
+    RoomStatus,
+    RoomUpdate,
+    RoomWithDevices,
+)
 from app.supabase_client import get_supabase
 
 router = APIRouter(tags=["rooms"])
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _latest_reading_per_device(metric: str) -> dict[str, float]:
@@ -44,12 +61,25 @@ def home_summary():
 
 @router.get("/rooms/status", response_model=list[RoomStatus])
 def rooms_status():
+    """
+    응답 형태(RoomStatus 목록)는 기존 그대로 유지 — 방을 room_id/rooms 테이블
+    기반으로 관리하게 되면서 내부적으로만 room_id -> 방 이름 조인을 거친다.
+    room_id가 없는(미배정) 기기는 이전처럼 어느 방에도 속하지 않아 응답에서 빠진다.
+    """
     supabase = get_supabase()
-    res = supabase.table("devices").select("id, room, type, label, state").execute()
+    devices_res = supabase.table("devices").select("id, room_id, type, label, state").execute()
+
+    room_ids = {d["room_id"] for d in devices_res.data if d["room_id"] is not None}
+    room_names: dict[int, str] = {}
+    if room_ids:
+        rooms_res = supabase.table("rooms").select("id, name").in_("id", list(room_ids)).execute()
+        room_names = {r["id"]: r["name"] for r in rooms_res.data}
 
     rooms: dict[str, list[dict]] = {}
-    for d in res.data:
-        rooms.setdefault(d["room"], []).append(d)
+    for d in devices_res.data:
+        if d["room_id"] is None or d["room_id"] not in room_names:
+            continue
+        rooms.setdefault(room_names[d["room_id"]], []).append(d)
 
     return [
         RoomStatus(
@@ -62,6 +92,123 @@ def rooms_status():
         )
         for room, devs in rooms.items()
     ]
+
+
+@router.get("/rooms", response_model=list[RoomWithDevices])
+def list_rooms():
+    supabase = get_supabase()
+    rooms_res = supabase.table("rooms").select("id, name").order("id").execute()
+    devices_res = supabase.table("devices").select("id, room_id, type, label, state").execute()
+
+    devices_by_room: dict[int, list[dict]] = {}
+    for d in devices_res.data:
+        if d["room_id"] is not None:
+            devices_by_room.setdefault(d["room_id"], []).append(d)
+
+    return [
+        RoomWithDevices(
+            id=r["id"],
+            name=r["name"],
+            devices=[
+                DeviceStatus(id=d["id"], label=d["label"], type=d["type"], state=d["state"])
+                for d in devices_by_room.get(r["id"], [])
+            ],
+        )
+        for r in rooms_res.data
+    ]
+
+
+@router.post("/rooms", response_model=RoomCreated, status_code=201)
+def create_room(body: RoomCreate):
+    supabase = get_supabase()
+    res = supabase.table("rooms").insert({"name": body.name}).execute()
+    created = res.data[0]
+    return RoomCreated(id=created["id"], name=created["name"])
+
+
+@router.patch("/rooms/{room_id}", response_model=RoomCreated)
+def update_room(room_id: int, body: RoomUpdate):
+    supabase = get_supabase()
+    existing = supabase.table("rooms").select("id").eq("id", room_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="room not found")
+
+    res = supabase.table("rooms").update({"name": body.name}).eq("id", room_id).execute()
+    updated = res.data[0]
+    return RoomCreated(id=updated["id"], name=updated["name"])
+
+
+@router.delete("/rooms/{room_id}")
+def delete_room(room_id: int):
+    supabase = get_supabase()
+    existing = supabase.table("rooms").select("id").eq("id", room_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="room not found")
+
+    # 방에 배정된 기기는 삭제하지 않고 미배정(room_id=null) 상태로 되돌린 뒤 방만 지운다
+    supabase.table("devices").update({"room_id": None}).eq("room_id", room_id).execute()
+    supabase.table("rooms").delete().eq("id", room_id).execute()
+
+    return {"ok": True}
+
+
+@router.patch("/devices/{device_id}", response_model=DeviceOut)
+def update_device(device_id: str, body: DeviceUpdate):
+    supabase = get_supabase()
+    existing = supabase.table("devices").select("id, type, label, state, room_id").eq("id", device_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    fields = body.model_dump(exclude_unset=True)
+    update: dict = {}
+    if "name" in fields:
+        update["label"] = fields["name"]
+    if "room_id" in fields:
+        room_id = fields["room_id"]
+        if room_id is not None:
+            room_exists = supabase.table("rooms").select("id").eq("id", room_id).execute()
+            if not room_exists.data:
+                raise HTTPException(status_code=404, detail="room not found")
+        update["room_id"] = room_id
+
+    row = existing.data[0]
+    if update:
+        res = supabase.table("devices").update(update).eq("id", device_id).execute()
+        row = res.data[0]
+
+    return DeviceOut(id=row["id"], label=row["label"], type=row["type"], state=row["state"], room_id=row["room_id"])
+
+
+@router.post("/devices/mock-register", response_model=DeviceOut, status_code=201)
+def mock_register_device(body: MockDeviceRegister):
+    """
+    프로토타입 전용 임시 엔드포인트 — 실제 ESP32 없이도 /devices/register가 만드는
+    device row를 그대로 흉내낸다. 실기기가 붙으면 삭제하거나 개발 환경 전용으로 막을 것.
+    """
+    supabase = get_supabase()
+    short_id = uuid.uuid4().hex[:6]
+    device_id = f"mock-{short_id}"
+    label = body.name or f"unregistered-{short_id}"
+
+    res = supabase.table("devices").insert(
+        {
+            "id": device_id,
+            "room_id": None,
+            "type": "relay",
+            "label": label,
+            "state": "off",
+            "last_seen_at": _now_iso(),
+        }
+    ).execute()
+    created = res.data[0]
+
+    return DeviceOut(
+        id=created["id"],
+        label=created["label"],
+        type=created["type"],
+        state=created["state"],
+        room_id=created["room_id"],
+    )
 
 
 @router.post("/devices/{device_id}/control")

@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -16,15 +17,27 @@ def _now_iso() -> str:
 @router.post("/register")
 def register_device(body: DeviceRegister):
     supabase = get_supabase()
-    supabase.table("devices").upsert(
-        {
-            "id": body.device_id,
-            "room": body.room,
-            "type": body.type,
-            "label": body.label,
-            "last_seen_at": _now_iso(),
-        }
-    ).execute()
+    now_iso = _now_iso()
+    existing = supabase.table("devices").select("id").eq("id", body.device_id).execute()
+
+    if existing.data:
+        # 재부팅 등으로 이미 등록된 기기가 다시 register를 호출한 경우 —
+        # 방 배정/이름은 앱에서 관리하는 값이므로 덮어쓰지 않고 생존 신호만 갱신한다.
+        supabase.table("devices").update(
+            {"type": body.type, "last_seen_at": now_iso}
+        ).eq("id", body.device_id).execute()
+    else:
+        label = body.label or f"unregistered-{uuid.uuid4().hex[:6]}"
+        supabase.table("devices").insert(
+            {
+                "id": body.device_id,
+                "room_id": None,
+                "type": body.type,
+                "label": label,
+                "last_seen_at": now_iso,
+            }
+        ).execute()
+
     return {"ok": True}
 
 

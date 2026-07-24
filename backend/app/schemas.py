@@ -11,7 +11,6 @@ Period = Literal["year", "month", "day"]
 class DeviceRegister(BaseModel):
     device_id: str
     type: DeviceType
-    room: str
     label: Optional[str] = None
 
 
@@ -48,6 +47,42 @@ class RoomStatus(BaseModel):
     room: str
     active: bool
     devices: list[DeviceStatus]
+
+
+class RoomCreate(BaseModel):
+    name: str
+
+
+class RoomUpdate(BaseModel):
+    name: str
+
+
+class RoomCreated(BaseModel):
+    id: int
+    name: str
+
+
+class RoomWithDevices(BaseModel):
+    id: int
+    name: str
+    devices: list[DeviceStatus]
+
+
+class DeviceOut(BaseModel):
+    id: str
+    label: Optional[str]
+    type: DeviceType
+    state: str
+    room_id: Optional[int] = None
+
+
+class DeviceUpdate(BaseModel):
+    name: Optional[str] = None
+    room_id: Optional[int] = None
+
+
+class MockDeviceRegister(BaseModel):
+    name: Optional[str] = None
 
 
 class HomeSummary(BaseModel):
