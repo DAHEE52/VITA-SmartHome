@@ -23,7 +23,18 @@ import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import { PlusIcon, EllipsisIcon } from '../components/icons';
-import { useCalendar, ScheduleItem, SpecialKind } from '../context/CalendarContext';
+import { useCalendar, ScheduleItem, SpecialKind, NewScheduleItemInput } from '../context/CalendarContext';
+
+// prev -> next로 바뀐 필드만 뽑아 백엔드 PATCH에 보낼 patch 객체를 만든다.
+function diffSchedulePatch(prev: ScheduleItem, next: ScheduleItem): Partial<NewScheduleItemInput> {
+  const patch: Partial<NewScheduleItemInput> = {};
+  if (prev.time !== next.time) patch.time = next.time;
+  if (prev.label !== next.label) patch.label = next.label;
+  if ((prev.kind ?? 'general') !== (next.kind ?? 'general')) patch.kind = next.kind;
+  if (JSON.stringify(prev.weekdays ?? null) !== JSON.stringify(next.weekdays ?? null)) patch.weekdays = next.weekdays;
+  if (JSON.stringify(prev.date ?? null) !== JSON.stringify(next.date ?? null)) patch.date = next.date;
+  return patch;
+}
 
 // 스크롤 없이 화면 높이 안에 다 들어와야 하므로, MainScreen과 같은 방식으로
 // 화면이 작은 기기에서는 날짜 그리드/일정 리스트 크기를 함께 줄이는 scale 값을 쓴다.
@@ -737,7 +748,7 @@ function AddScheduleModal({
   viewMonth: number;
   defaultDay: number | null;
   onClose: () => void;
-  onAdd: (item: ScheduleItem) => void;
+  onAdd: (item: NewScheduleItemInput) => void;
 }) {
   const [time, setTime] = useState('');
   const [label, setLabel] = useState('');
@@ -763,7 +774,6 @@ function AddScheduleModal({
   const handleAdd = () => {
     if (time.trim() || label.trim()) {
       onAdd({
-        id: `${title}-${Date.now()}`,
         time: time.trim(),
         label: label.trim(),
         // 지금 보고 있는 연/월에 붙여서 추가한다. 날짜(며칠)를 안 적으면 1일로 기본 지정.
@@ -849,7 +859,16 @@ export default function CalendarScreen() {
   const [viewMonth, setViewMonth] = useState(now.getMonth() + 1);
   const [pickerVisible, setPickerVisible] = useState(false);
 
-  const { dailyItems, specialItems, setDailyItems, setSpecialItems } = useCalendar();
+  const {
+    dailyItems,
+    specialItems,
+    addDailyItem,
+    addSpecialItem,
+    updateDailyItem,
+    updateSpecialItem,
+    removeDailyItem,
+    removeSpecialItem,
+  } = useCalendar();
   const [editingSection, setEditingSection] = useState<'daily' | 'special' | null>(null);
   const [addingSection, setAddingSection] = useState<'daily' | 'special' | null>(null);
   // 달력에서 탭한 날짜(며칠) - 지정돼 있으면 SPECIAL 목록이 이 날짜 것만 보여준다.
@@ -963,7 +982,18 @@ export default function CalendarScreen() {
         viewYear={viewYear}
         viewMonth={viewMonth}
         onClose={() => setEditingSection(null)}
-        onSave={setDailyItems}
+        onSave={(updatedItems) => {
+          const nextIds = new Set(updatedItems.map((it) => it.id));
+          dailyItems.forEach((original) => {
+            if (!nextIds.has(original.id)) removeDailyItem(original.id);
+          });
+          updatedItems.forEach((item) => {
+            const original = dailyItems.find((it) => it.id === item.id);
+            if (!original) return; // 이 모달은 기존 항목 수정/삭제만 하고 새로 추가하진 않는다
+            const patch = diffSchedulePatch(original, item);
+            if (Object.keys(patch).length > 0) updateDailyItem(item.id, patch);
+          });
+        }}
       />
       <ScheduleEditModal
         visible={editingSection === 'special'}
@@ -974,19 +1004,18 @@ export default function CalendarScreen() {
         viewMonth={viewMonth}
         onClose={() => setEditingSection(null)}
         onSave={(updatedItems) => {
-          // 지금 화면에 보이는 범위(선택한 날짜만, 또는 선택이 없으면 이번 달 전체)만
-          // 교체하고 그 외 항목(다른 날짜/다른 달)은 그대로 둔다.
-          setSpecialItems((prev) => [
-            ...prev.filter(
-              (it) =>
-                !(
-                  it.date?.year === viewYear &&
-                  it.date?.month === viewMonth &&
-                  (selectedDay == null || it.date?.day === selectedDay)
-                )
-            ),
-            ...updatedItems,
-          ]);
+          // 지금 화면에 보이는 범위(선택한 날짜만, 또는 선택이 없으면 이번 달 전체)만 비교 대상으로 삼고
+          // 그 외 항목(다른 날짜/다른 달)은 건드리지 않는다.
+          const nextIds = new Set(updatedItems.map((it) => it.id));
+          displayedSpecialItems.forEach((original) => {
+            if (!nextIds.has(original.id)) removeSpecialItem(original.id);
+          });
+          updatedItems.forEach((item) => {
+            const original = displayedSpecialItems.find((it) => it.id === item.id);
+            if (!original) return;
+            const patch = diffSchedulePatch(original, item);
+            if (Object.keys(patch).length > 0) updateSpecialItem(item.id, patch);
+          });
         }}
       />
 
@@ -998,7 +1027,7 @@ export default function CalendarScreen() {
         viewMonth={viewMonth}
         defaultDay={null}
         onClose={() => setAddingSection(null)}
-        onAdd={(item) => setDailyItems((prev) => [...prev, item])}
+        onAdd={addDailyItem}
       />
       <AddScheduleModal
         visible={addingSection === 'special'}
@@ -1008,7 +1037,7 @@ export default function CalendarScreen() {
         viewMonth={viewMonth}
         defaultDay={selectedDay}
         onClose={() => setAddingSection(null)}
-        onAdd={(item) => setSpecialItems((prev) => [...prev, item])}
+        onAdd={addSpecialItem}
       />
     </SafeAreaView>
   );

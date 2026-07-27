@@ -69,3 +69,29 @@ create table if not exists notifications (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_notifications_created on notifications(created_at desc);
+
+-- 앱 설정 - 절전 목표(가구 인원/kWh 목표)와 환경설정(주소, 가이드북 글자크기).
+-- 로그인/멀티유저가 없는 프로토타입 단계라 딱 한 행(id=1)만 쓰는 싱글턴 테이블로 둔다.
+create table if not exists app_settings (
+  id int primary key default 1,
+  household_size int check (household_size between 1 and 5),
+  goal_kwh double precision,
+  address text not null default '',
+  guidebook_font_size text not null default 'medium' check (guidebook_font_size in ('small', 'medium', 'large')),
+  constraint app_settings_singleton check (id = 1)
+);
+insert into app_settings (id) values (1) on conflict (id) do nothing;
+
+-- 자동화 규칙 - AutomationScreen/AutomationContext가 사용.
+-- trigger/action은 종류가 다양해서(외출/외박/루틴/재실 트리거 x 기기on/off/온도설정/재실온도 액션)
+-- 프런트엔드 타입을 그대로 jsonb로 저장한다.
+create table if not exists automation_rules (
+  id bigserial primary key,
+  trigger jsonb not null,
+  offset_minutes int not null default 0,
+  room_id bigint not null references rooms(id) on delete cascade,
+  action jsonb not null,
+  enabled boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_automation_rules_room on automation_rules(room_id);

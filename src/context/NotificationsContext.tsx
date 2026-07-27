@@ -1,7 +1,12 @@
 // 알림 목록을 앱 전체에서 공유하는 Context.
 // GoalContext/RoomsContext와 같은 이유로 네비게이터보다 위(App.tsx)에서 한 번만 마운트해서,
 // 알림을 확인한 뒤 다른 화면으로 이동했다가 돌아와도 읽음 상태가 유지되도록 한다.
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+//
+// backend/app/routers/notifications.py의 /notifications API를 통해 Supabase(notifications
+// 테이블)에 저장된다. RoomsContext와 같은 패턴으로 마운트 시 한 번 불러오고, 이후 변경은 로컬
+// state를 낙관적으로 갱신한 뒤 백엔드에도 반영한다.
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import * as api from '../api/client';
 
 export type NotificationItem = {
   id: string;
@@ -10,18 +15,6 @@ export type NotificationItem = {
   time: string;
   read: boolean;
 };
-
-// 앱에 지속 저장소가 없어 매번 새로 시작하므로, Provider가 처음 마운트되는 시점(=앱을 처음 켠
-// 시점)에 항상 웰컴 알림 하나로 시작한다.
-const initialNotifications: NotificationItem[] = [
-  {
-    id: 'welcome',
-    title: '환영합니다!',
-    message: 'VITA 스마트홈에 오신 것을 환영해요. 메뉴에서 다양한 기능을 둘러보세요.',
-    time: '방금 전',
-    read: false,
-  },
-];
 
 type NotificationsContextValue = {
   notifications: NotificationItem[];
@@ -33,26 +26,61 @@ type NotificationsContextValue = {
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
 
+// created_at(ISO 문자열)을 "방금 전"/"n분 전"/"n시간 전"/"n일 전" 형태로 보여준다.
+function formatRelativeTime(createdAt: string): string {
+  const diffMs = Date.now() - new Date(createdAt).getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return '방금 전';
+  if (diffMin < 60) return `${diffMin}분 전`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}시간 전`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay}일 전`;
+}
+
+function fromApi(item: api.NotificationOut): NotificationItem {
+  return {
+    id: String(item.id),
+    title: item.title,
+    message: item.message,
+    time: formatRelativeTime(item.created_at),
+    read: item.read,
+  };
+}
+
 export function NotificationsProvider({ children }: { children: ReactNode }) {
-  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const items = await api.getNotifications();
+        setNotifications(items.map(fromApi));
+      } catch (err) {
+        console.warn('알림 목록 불러오기 실패(백엔드 연결을 확인하세요):', err);
+      }
+    })();
+  }, []);
 
   const markAsRead = (id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    api.markNotificationRead(Number(id)).catch((err) => console.warn('알림 읽음 처리 실패:', err));
   };
 
   // 읽은 알림만 삭제할 수 있다 - 안읽은 알림은 먼저 확인(markAsRead)해야 삭제 버튼이 나타나고,
   // 혹시 안읽은 알림에 대해 호출되더라도 여기서 한 번 더 막아준다.
   const deleteNotification = (id: string) => {
     setNotifications((prev) => prev.filter((n) => !(n.id === id && n.read)));
+    api.deleteNotification(Number(id)).catch((err) => console.warn('알림 삭제 실패:', err));
   };
 
   // 화재 예방 시스템의 자동 차단 등, 앱이 스스로 만들어내는 알림을 목록 맨 앞에 안읽음 상태로 추가한다.
   const pushNotification = (title: string, message: string) => {
-    setNotifications((prev) => [
-      { id: `auto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title, message, time: '방금 전', read: false },
-      ...prev,
-    ]);
+    api
+      .createNotification(title, message)
+      .then((created) => setNotifications((prev) => [fromApi(created), ...prev]))
+      .catch((err) => console.warn('알림 생성 실패:', err));
   };
 
   return (

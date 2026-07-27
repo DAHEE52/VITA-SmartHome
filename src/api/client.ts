@@ -155,6 +155,13 @@ export function createSpecialItem(body: {
   return request('/schedule/special', { method: 'POST', body: JSON.stringify(body) });
 }
 
+export function updateScheduleItem(
+  id: number,
+  body: { time?: string; label?: string; kind?: SpecialKind; date?: ScheduleDate | null; weekdays?: number[] | null }
+): Promise<ScheduleItemOut> {
+  return request(`/schedule/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
 export function deleteScheduleItem(id: number): Promise<{ ok: boolean }> {
   return request(`/schedule/${id}`, { method: 'DELETE' });
 }
@@ -183,4 +190,65 @@ export function markNotificationRead(id: number): Promise<{ ok: boolean }> {
 
 export function deleteNotification(id: number): Promise<{ ok: boolean }> {
   return request(`/notifications/${id}`, { method: 'DELETE' });
+}
+
+// --- 앱 설정(절전 목표 + 환경설정) ---
+
+export type FontSizeOption = 'small' | 'medium' | 'large';
+
+export type AppSettings = {
+  household_size: 1 | 2 | 3 | 4 | 5 | null;
+  goal_kwh: number | null;
+  address: string;
+  guidebook_font_size: FontSizeOption;
+};
+
+export function getSettings(): Promise<AppSettings> {
+  return request<AppSettings>('/settings');
+}
+
+export function updateSettings(body: Partial<AppSettings>): Promise<AppSettings> {
+  return request('/settings', { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+// --- 자동화 규칙(automation_rules) ---
+
+export type AutomationRuleOut = {
+  id: number;
+  trigger: Record<string, unknown>;
+  offset_minutes: number;
+  room_id: number;
+  action: Record<string, unknown>;
+  enabled: boolean;
+};
+
+export function getAutomationRules(): Promise<AutomationRuleOut[]> {
+  return request<AutomationRuleOut[]>('/automation-rules');
+}
+
+export function createAutomationRule(body: {
+  trigger: Record<string, unknown>;
+  offset_minutes: number;
+  room_id: number;
+  action: Record<string, unknown>;
+  enabled?: boolean;
+}): Promise<AutomationRuleOut> {
+  return request('/automation-rules', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateAutomationRule(
+  id: number,
+  body: Partial<{
+    trigger: Record<string, unknown>;
+    offset_minutes: number;
+    room_id: number;
+    action: Record<string, unknown>;
+    enabled: boolean;
+  }>
+): Promise<AutomationRuleOut> {
+  return request(`/automation-rules/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export function deleteAutomationRule(id: number): Promise<{ ok: boolean }> {
+  return request(`/automation-rules/${id}`, { method: 'DELETE' });
 }

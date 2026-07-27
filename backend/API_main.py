@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import devices, energy, notifications, rooms, schedule
+from app.routers import automation, devices, energy, notifications, rooms, schedule, settings
 
 app = FastAPI()
 
@@ -18,6 +18,8 @@ app.include_router(rooms.router)
 app.include_router(energy.router)
 app.include_router(schedule.router)
 app.include_router(notifications.router)
+app.include_router(settings.router)
+app.include_router(automation.router)
 
 
 @app.get("/health")

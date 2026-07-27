@@ -1,6 +1,6 @@
-from app.schemas import DailyItemCreate, ScheduleDate, ScheduleItemOut, SpecialItemCreate
+from app.schemas import DailyItemCreate, ScheduleDate, ScheduleItemOut, ScheduleItemUpdate, SpecialItemCreate
 from app.supabase_client import get_supabase
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
@@ -63,6 +63,37 @@ def create_special(body: SpecialItemCreate):
         .execute()
     )
     return _row_to_item(res.data[0])
+
+
+@router.patch("/{item_id}", response_model=ScheduleItemOut)
+def update_item(item_id: int, body: ScheduleItemUpdate):
+    supabase = get_supabase()
+    existing = supabase.table("schedule_items").select("*").eq("id", item_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="schedule item not found")
+
+    fields = body.model_dump(exclude_unset=True)
+    update: dict = {}
+    if "time" in fields:
+        update["time"] = fields["time"]
+    if "label" in fields:
+        update["label"] = fields["label"]
+    if "kind" in fields:
+        update["special_kind"] = fields["kind"]
+    if "weekdays" in fields:
+        update["weekdays"] = fields["weekdays"]
+    if "date" in fields:
+        date = fields["date"]
+        update["item_year"] = date["year"] if date else None
+        update["item_month"] = date["month"] if date else None
+        update["item_day"] = date["day"] if date else None
+
+    row = existing.data[0]
+    if update:
+        res = supabase.table("schedule_items").update(update).eq("id", item_id).execute()
+        row = res.data[0]
+
+    return _row_to_item(row)
 
 
 @router.delete("/{item_id}")

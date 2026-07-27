@@ -138,6 +138,14 @@ class SpecialItemCreate(BaseModel):
     date: ScheduleDate
 
 
+class ScheduleItemUpdate(BaseModel):
+    time: Optional[str] = None
+    label: Optional[str] = None
+    kind: Optional[SpecialKind] = None
+    date: Optional[ScheduleDate] = None
+    weekdays: Optional[list[int]] = None
+
+
 class NotificationOut(BaseModel):
     id: int
     title: str
@@ -149,3 +157,46 @@ class NotificationOut(BaseModel):
 class NotificationCreate(BaseModel):
     title: str
     message: str
+
+
+HouseholdSize = Literal[1, 2, 3, 4, 5]
+FontSizeOption = Literal["small", "medium", "large"]
+
+
+class AppSettingsOut(BaseModel):
+    household_size: Optional[HouseholdSize] = None
+    goal_kwh: Optional[float] = None
+    address: str
+    guidebook_font_size: FontSizeOption
+
+
+class AppSettingsUpdate(BaseModel):
+    household_size: Optional[HouseholdSize] = None
+    goal_kwh: Optional[float] = None
+    address: Optional[str] = None
+    guidebook_font_size: Optional[FontSizeOption] = None
+
+
+class AutomationRuleCreate(BaseModel):
+    trigger: dict
+    offset_minutes: int = 0
+    room_id: int
+    action: dict
+    enabled: bool = True
+
+
+class AutomationRuleUpdate(BaseModel):
+    trigger: Optional[dict] = None
+    offset_minutes: Optional[int] = None
+    room_id: Optional[int] = None
+    action: Optional[dict] = None
+    enabled: Optional[bool] = None
+
+
+class AutomationRuleOut(BaseModel):
+    id: int
+    trigger: dict
+    offset_minutes: int
+    room_id: int
+    action: dict
+    enabled: bool

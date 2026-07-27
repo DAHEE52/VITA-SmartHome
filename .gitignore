@@ -40,6 +40,10 @@ firmware/*/config.h
 backend/build/
 backend/lambda_deploy.zip
 
+# 로컬 개발용 Python 가상환경/캐시
+backend/venv/
+**/__pycache__/
+
 # EAS 빌드 산출물(APK 등) - 용량이 커서 git에 올리지 않음
 builds/
 

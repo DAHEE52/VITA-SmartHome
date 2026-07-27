@@ -5,7 +5,12 @@
 //
 // 실제 캘린더 API/센서는 없으므로 CalendarContext의 일정 데이터와 RoomsContext의 방/기기 상태를
 // 그대로 참조하는 규칙 기반 시뮬레이션이다.
+//
+// 규칙 자체(트리거/액션/방/활성화 여부)는 backend/app/routers/automation.py의 /automation-rules
+// API를 통해 Supabase(automation_rules 테이블)에 저장된다 - trigger/action이 종류가 다양해서
+// 백엔드에는 jsonb로 그대로 저장하고, 프런트에서 이 파일의 타입으로 캐스팅해서 쓴다.
 import React, { createContext, useContext, useState, useRef, useEffect, ReactNode } from 'react';
+import * as api from '../api/client';
 import { useCalendar, ScheduleItem } from './CalendarContext';
 import { useRooms } from './RoomsContext';
 import { useNotifications } from './NotificationsContext';
@@ -121,6 +126,28 @@ export function describeTrigger(trigger: AutomationTrigger, dailyItems: Schedule
   return routine.label ? `루틴 "${routine.label}"` : '요일별 루틴';
 }
 
+// 백엔드는 trigger/action을 느슨한 jsonb(dict)로 저장하므로, 프런트 타입으로 그대로 캐스팅한다.
+function fromApiRule(r: api.AutomationRuleOut): AutomationRule {
+  return {
+    id: String(r.id),
+    trigger: r.trigger as unknown as AutomationTrigger,
+    offsetMinutes: r.offset_minutes,
+    roomId: String(r.room_id),
+    action: r.action as unknown as AutomationAction,
+    enabled: r.enabled,
+  };
+}
+
+// patch에 실제로 들어있는 키만 백엔드 필드명으로 바꿔서 보낸다.
+function toApiRulePatch(patch: Partial<NewRuleInput>) {
+  const body: { trigger?: AutomationTrigger; offset_minutes?: number; room_id?: number; action?: AutomationAction } = {};
+  if ('trigger' in patch) body.trigger = patch.trigger;
+  if ('offsetMinutes' in patch) body.offset_minutes = patch.offsetMinutes;
+  if ('roomId' in patch && patch.roomId != null) body.room_id = Number(patch.roomId);
+  if ('action' in patch) body.action = patch.action;
+  return body;
+}
+
 export function AutomationProvider({ children }: { children: ReactNode }) {
   const { dailyItems, specialItems } = useCalendar();
   const { rooms, setDevicePower, setRoomTargetTemp } = useRooms();
@@ -221,30 +248,48 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const apiRules = await api.getAutomationRules();
+        setRules(apiRules.map(fromApiRule));
+      } catch (err) {
+        console.warn('자동화 규칙 불러오기 실패(백엔드 연결을 확인하세요):', err);
+      }
+    })();
+  }, []);
+
   const addRule = (input: NewRuleInput) => {
-    setRules((prev) => [
-      ...prev,
-      {
-        id: `rule-${Date.now()}`,
-        enabled: true,
+    api
+      .createAutomationRule({
         trigger: input.trigger,
-        offsetMinutes: input.offsetMinutes,
-        roomId: input.roomId,
+        offset_minutes: input.offsetMinutes,
+        room_id: Number(input.roomId),
         action: input.action,
-      },
-    ]);
+        enabled: true,
+      })
+      .then((created) => setRules((prev) => [...prev, fromApiRule(created)]))
+      .catch((err) => console.warn('자동화 규칙 추가 실패:', err));
   };
 
   const updateRule = (id: string, patch: Partial<NewRuleInput>) => {
     setRules((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    api
+      .updateAutomationRule(Number(id), toApiRulePatch(patch))
+      .catch((err) => console.warn('자동화 규칙 수정 실패:', err));
   };
 
   const deleteRule = (id: string) => {
     setRules((prev) => prev.filter((r) => r.id !== id));
+    api.deleteAutomationRule(Number(id)).catch((err) => console.warn('자동화 규칙 삭제 실패:', err));
   };
 
   const toggleRuleEnabled = (id: string) => {
     setRules((prev) => prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
+    const nextEnabled = !rulesRef.current.find((r) => r.id === id)?.enabled;
+    api
+      .updateAutomationRule(Number(id), { enabled: nextEnabled })
+      .catch((err) => console.warn('자동화 규칙 활성화 상태 변경 실패:', err));
   };
 
   return (

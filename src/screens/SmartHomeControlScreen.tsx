@@ -98,19 +98,32 @@ function RoomSettingsModal({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDeleteDevice, setConfirmDeleteDevice] = useState<string | null>(null);
 
+  // room.id로만 의존성을 걸어서, 같은 방을 계속 보고 있는 동안(온도 변경 등으로 room 객체
+  // 참조만 바뀌는 경우) 사용자가 입력 중인(아직 저장 안 한) 이름이 지워지지 않게 한다.
+  // room 전체를 의존성으로 두면 온도 변경/기기 목록 변경 때마다 room 참조가 바뀌어 이 effect가
+  // 다시 돌면서 아직 "저장"을 누르지 않은 nameInput을 서버 값으로 되돌려버리는 문제가 있었다.
   useEffect(() => {
     if (room) {
       setNameInput(room.label);
       setConfirmDelete(false);
       setConfirmDeleteDevice(null);
     }
-  }, [room]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?.id]);
 
   const handleSave = () => {
     if (room && nameInput.trim()) {
       onRename(room.id, nameInput.trim());
     }
     onClose();
+  };
+
+  // 기기 추가 창으로 넘어가면 방 설정 창이 잠깐 닫혔다 다시 열리는데(같은 room.id로), 그 사이
+  // 아직 저장하지 않은 이름 변경이 있으면 먼저 커밋해서 되돌아왔을 때 사라지지 않게 한다.
+  const commitPendingRename = () => {
+    if (room && nameInput.trim() && nameInput.trim() !== room.label) {
+      onRename(room.id, nameInput.trim());
+    }
   };
 
   const handleConfirmDelete = () => {
@@ -268,7 +281,11 @@ function RoomSettingsModal({
 
               <AnimatedPressable
                 style={styles.addDeviceInModalButton}
-                onPress={() => room && onAddDevice(room.id)}
+                onPress={() => {
+                  if (!room) return;
+                  commitPendingRename();
+                  onAddDevice(room.id);
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={styles.addDeviceInModalText}>기기 추가</Text>
