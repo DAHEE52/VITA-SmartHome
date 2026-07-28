@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 
 from app.deps import require_device_key
-from app.schemas import CommandAck, DeviceRegister, PendingCommand, ReadingsIn
+from app.schemas import ClassifyIn, CommandAck, DeviceRegister, PendingCommand, ReadingsIn
 from app.supabase_client import get_supabase
 
 router = APIRouter(prefix="/devices", tags=["devices"], dependencies=[Depends(require_device_key)])
@@ -50,6 +50,18 @@ def post_readings(device_id: str, body: ReadingsIn):
     ]
     if rows:
         supabase.table("sensor_readings").insert(rows).execute()
+    supabase.table("devices").update({"last_seen_at": _now_iso()}).eq("id", device_id).execute()
+    return {"ok": True}
+
+
+@router.post("/{device_id}/classify")
+def post_classification(device_id: str, body: ClassifyIn):
+    """생활 패턴 비전 모델(life_pattern_vision_node)이 분류 결과를 push하는 엔드포인트.
+    아직 모델이 배포되기 전에는 아무 기기도 이 경로를 호출하지 않는다."""
+    supabase = get_supabase()
+    supabase.table("classification_events").insert(
+        {"device_id": device_id, "model": body.model, "label": body.label, "confidence": body.confidence}
+    ).execute()
     supabase.table("devices").update({"last_seen_at": _now_iso()}).eq("id", device_id).execute()
     return {"ok": True}
 

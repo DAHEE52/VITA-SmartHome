@@ -5,9 +5,11 @@
 // 나머지 로직은 손댈 필요가 없다.
 import React, { createContext, useContext, useState, useRef, useEffect, ReactNode } from 'react';
 import { useRooms } from './RoomsContext';
-import { RoomSensorReading, SENSOR_DANGER_TEMP_C } from '../utils/fireRisk';
+import { RoomSensorReading, SENSOR_DANGER_TEMP_C, RISE_WINDOW_MS } from '../utils/fireRisk';
 
 const UPDATE_INTERVAL_MS = 4000; // 4초마다 값을 갱신한다 - 나중에 실제 센서를 붙일 때도 비슷한 주기로 폴링/구독하면 됨.
+
+type TempSample = { t: number; temperatureC: number };
 
 type SensorContextValue = {
   readings: Record<string, RoomSensorReading>; // roomId -> 최신 센서 값
@@ -16,6 +18,9 @@ type SensorContextValue = {
   // 화재 감지 → 자동 차단 → 긴급 배너로 이어지는 전체 흐름을 확인해볼 수 있게 하는 테스트용 스위치.
   simulateFire: (roomId: string) => void;
   clearSimulation: (roomId: string) => void;
+  // 명세서 3번 항목 "5분 내 5℃ 이상 상승" 감지용 - 최근 RISE_WINDOW_MS(5분) 동안의 온도 상승폭(℃).
+  // 5분치 이력이 아직 안 쌓였으면(막 방이 추가된 직후 등) 0을 돌려준다.
+  getTemperatureRiseC: (roomId: string) => number;
 };
 
 const SensorContext = createContext<SensorContextValue | null>(null);
@@ -63,6 +68,9 @@ export function SensorProvider({ children }: { children: ReactNode }) {
   roomsRef.current = rooms;
   const simulatedRef = useRef(simulatedRoomIds);
   simulatedRef.current = simulatedRoomIds;
+  // 방별 최근 5분 온도 이력 - state가 아니라 ref로 들고 있어서(리렌더를 유발하지 않고) 매 tick마다
+  // 조용히 쌓기만 하고, 값이 필요할 때(getTemperatureRiseC)만 읽는다.
+  const historyRef = useRef<Record<string, TempSample[]>>({});
 
   // 방이 추가/삭제될 때마다 readings의 키를 맞춘다 - 새 방은 정상 범위 더미 값으로 시작.
   const roomIdsKey = rooms.map((r) => r.id).join(',');
@@ -86,9 +94,14 @@ export function SensorProvider({ children }: { children: ReactNode }) {
         const next: Record<string, RoomSensorReading> = { ...prev };
         for (const room of roomsRef.current) {
           const isSimulating = simulatedRef.current.has(room.id);
-          next[room.id] = isSimulating
+          const reading = isSimulating
             ? generateDangerReading(prev[room.id])
             : generateNormalReading(prev[room.id]);
+          next[room.id] = reading;
+
+          const history = historyRef.current[room.id] ?? [];
+          history.push({ t: reading.updatedAt, temperatureC: reading.temperatureC });
+          historyRef.current[room.id] = history.filter((s) => reading.updatedAt - s.t <= RISE_WINDOW_MS);
         }
         return next;
       });
@@ -98,6 +111,13 @@ export function SensorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isSimulatingFire = (roomId: string) => simulatedRoomIds.has(roomId);
+
+  // 최근 5분 이력 중 가장 오래된 샘플과 현재 값의 차이 - "5분 내 5℃ 이상 상승" 판정 기준.
+  const getTemperatureRiseC = (roomId: string) => {
+    const history = historyRef.current[roomId];
+    if (!history || history.length < 2) return 0;
+    return history[history.length - 1].temperatureC - history[0].temperatureC;
+  };
 
   const simulateFire = (roomId: string) => {
     setSimulatedRoomIds((prev) => new Set(prev).add(roomId));
@@ -112,7 +132,9 @@ export function SensorProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SensorContext.Provider value={{ readings, isSimulatingFire, simulateFire, clearSimulation }}>
+    <SensorContext.Provider
+      value={{ readings, isSimulatingFire, simulateFire, clearSimulation, getTemperatureRiseC }}
+    >
       {children}
     </SensorContext.Provider>
   );

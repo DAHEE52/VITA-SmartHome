@@ -1,5 +1,7 @@
 // 시안 4 - 스마트홈 제어 화면.
-// 구조: 활성화된 기기 수 카드 / 방(Room) 카드 2열 그리드(마지막 칸은 방 추가 버튼, 스크롤 가능) / 하단 네비(홈)
+// 구조: 활성화된 기기 수 카드 / 방(Room) 카드 2열 그리드(마지막 칸은 기기 추가 버튼, 스크롤 가능) / 하단 네비(홈)
+// VITA는 원룸 전용 서비스라 방은 항상 정확히 하나만 존재한다(RoomsContext가 자동 보장) -
+// 그래서 이 화면엔 방을 추가/삭제하는 UI가 없고, 그리드 끝의 "+" 버튼은 바로 그 방에 기기를 추가한다.
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -18,7 +20,7 @@ import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { PlusIcon, CloseIcon } from '../components/icons';
-import { useRooms, Room, MAX_ROOMS } from '../context/RoomsContext';
+import { useRooms, Room } from '../context/RoomsContext';
 
 // 화면이 작은 기기에서는 카드 padding/폰트 크기를 함께 줄이는 scale 값을 쓴다.
 const REFERENCE_HEIGHT = 820;
@@ -77,7 +79,6 @@ function RoomSettingsModal({
   room,
   onClose,
   onRename,
-  onDelete,
   onToggleDeviceMode,
   onToggleDevicePower,
   onDeleteDevice,
@@ -87,7 +88,6 @@ function RoomSettingsModal({
   room: Room | null;
   onClose: () => void;
   onRename: (id: string, label: string) => void;
-  onDelete: (id: string) => void;
   onToggleDeviceMode: (roomId: string, deviceName: string) => void;
   onToggleDevicePower: (roomId: string, deviceName: string) => void;
   onDeleteDevice: (roomId: string, deviceName: string) => void;
@@ -95,7 +95,6 @@ function RoomSettingsModal({
   onSetTargetTemp: (roomId: string, temp: number) => void;
 }) {
   const [nameInput, setNameInput] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDeleteDevice, setConfirmDeleteDevice] = useState<string | null>(null);
 
   // room.id로만 의존성을 걸어서, 같은 방을 계속 보고 있는 동안(온도 변경 등으로 room 객체
@@ -105,7 +104,6 @@ function RoomSettingsModal({
   useEffect(() => {
     if (room) {
       setNameInput(room.label);
-      setConfirmDelete(false);
       setConfirmDeleteDevice(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,11 +124,6 @@ function RoomSettingsModal({
     }
   };
 
-  const handleConfirmDelete = () => {
-    if (room) onDelete(room.id);
-    onClose();
-  };
-
   const handleConfirmDeleteDevice = () => {
     if (room && confirmDeleteDevice) onDeleteDevice(room.id, confirmDeleteDevice);
     setConfirmDeleteDevice(null);
@@ -140,24 +133,7 @@ function RoomSettingsModal({
     <Modal visible={!!room} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => {}}>
-          {confirmDelete ? (
-            <>
-              <Text style={styles.modalTitle}>{room?.label} 방을 삭제할까요?</Text>
-              <Text style={styles.confirmSubtitle}>삭제하면 되돌릴 수 없어요.</Text>
-              <View style={styles.modalBottomRow}>
-                <AnimatedPressable
-                  style={styles.modalCloseButton}
-                  onPress={() => setConfirmDelete(false)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.modalCloseText}>취소</Text>
-                </AnimatedPressable>
-                <AnimatedPressable style={styles.deleteButton} onPress={handleConfirmDelete} activeOpacity={0.7}>
-                  <Text style={styles.deleteButtonText}>삭제</Text>
-                </AnimatedPressable>
-              </View>
-            </>
-          ) : confirmDeleteDevice ? (
+          {confirmDeleteDevice ? (
             <>
               <Text style={styles.modalTitle}>{confirmDeleteDevice} 기기를 삭제할까요?</Text>
               <Text style={styles.confirmSubtitle}>삭제하면 되돌릴 수 없어요.</Text>
@@ -291,18 +267,13 @@ function RoomSettingsModal({
                 <Text style={styles.addDeviceInModalText}>기기 추가</Text>
               </AnimatedPressable>
 
-              <View style={styles.modalBottomRow}>
-                <AnimatedPressable
-                  style={styles.deleteButton}
-                  onPress={() => setConfirmDelete(true)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.deleteButtonText}>방 삭제</Text>
-                </AnimatedPressable>
-                <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
-                  <Text style={styles.modalCloseText}>닫기</Text>
-                </AnimatedPressable>
-              </View>
+              <AnimatedPressable
+                style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
+                onPress={onClose}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modalCloseText}>닫기</Text>
+              </AnimatedPressable>
             </>
           )}
         </Pressable>
@@ -311,8 +282,9 @@ function RoomSettingsModal({
   );
 }
 
-// 새 방을 추가하는 원형 "+" 버튼. 다른 방 카드와 달리 배경 카드 없이 원만 떠 있음.
-function AddRoomButton({ scale, cellSize, onPress }: { scale: number; cellSize: number; onPress: () => void }) {
+// 기기를 추가하는 원형 "+" 버튼. 다른 방 카드와 달리 배경 카드 없이 원만 떠 있음.
+// 원룸 전용이라 방은 항상 하나뿐이므로, 이 버튼은 방 선택 없이 곧바로 그 방에 기기를 추가한다.
+function AddDeviceButton({ scale, cellSize, onPress }: { scale: number; cellSize: number; onPress: () => void }) {
   const size = 56 * scale;
   return (
     <View style={[styles.gridCell, { width: cellSize, height: cellSize }]}>
@@ -320,7 +292,7 @@ function AddRoomButton({ scale, cellSize, onPress }: { scale: number; cellSize: 
         style={[styles.addCircle, { width: size, height: size, borderRadius: size / 2 }]}
         activeOpacity={0.7}
         onPress={onPress}
-        accessibilityLabel="방 추가"
+        accessibilityLabel="기기 추가"
       >
         <PlusIcon size={24 * scale} />
       </AnimatedPressable>
@@ -391,9 +363,7 @@ export default function SmartHomeControlScreen() {
   const cellSize = (width - SCREEN_PADDING * 2 - GRID_GAP) / 2;
   const {
     rooms,
-    addRoom,
     renameRoom,
-    deleteRoom,
     addDevice,
     deleteDevice,
     toggleDeviceMode,
@@ -402,6 +372,9 @@ export default function SmartHomeControlScreen() {
   } = useRooms();
   const [settingsRoomId, setSettingsRoomId] = useState<string | null>(null);
   const [addDeviceRoomId, setAddDeviceRoomId] = useState<string | null>(null);
+  // 기기 추가 창이 방 설정 창을 거쳐 열렸는지(닫을 때 설정 창으로 되돌아가야 함), 그리드의 "+"
+  // 버튼으로 곧장 열렸는지(닫을 때 그냥 닫히면 됨) 구분한다.
+  const [addDeviceFromSettings, setAddDeviceFromSettings] = useState(false);
 
   const activeCount = rooms.reduce(
     (sum, r) => sum + r.devices.filter((d) => d.on).length,
@@ -416,13 +389,22 @@ export default function SmartHomeControlScreen() {
   const openAddDeviceFromSettings = (roomId: string) => {
     setSettingsRoomId(null);
     setAddDeviceRoomId(roomId);
+    setAddDeviceFromSettings(true);
   };
 
-  // 기기 추가 창을 닫을 때(취소/등록 모두) 원래 보고 있던 방의 설정 창으로 되돌아간다.
+  // 그리드 끝의 "+" 버튼을 누르면 호출된다. 원룸 전용이라 방 선택 없이 그 방(rooms[0])에
+  // 바로 기기 추가 창을 연다.
+  const openAddDeviceFromGrid = (roomId: string) => {
+    setAddDeviceRoomId(roomId);
+    setAddDeviceFromSettings(false);
+  };
+
+  // 기기 추가 창을 닫을 때(취소/등록 모두), 방 설정 창을 거쳐 온 경우에만 그 설정 창으로 되돌아간다.
   const closeAddDeviceModal = () => {
     const roomId = addDeviceRoomId;
+    const cameFromSettings = addDeviceFromSettings;
     setAddDeviceRoomId(null);
-    if (roomId) setSettingsRoomId(roomId);
+    if (roomId && cameFromSettings) setSettingsRoomId(roomId);
   };
 
   return (
@@ -442,8 +424,12 @@ export default function SmartHomeControlScreen() {
                 onOpenSettings={() => setSettingsRoomId(room.id)}
               />
             ))}
-            {rooms.length < MAX_ROOMS && (
-              <AddRoomButton scale={scale} cellSize={cellSize} onPress={addRoom} />
+            {rooms[0] && (
+              <AddDeviceButton
+                scale={scale}
+                cellSize={cellSize}
+                onPress={() => openAddDeviceFromGrid(rooms[0].id)}
+              />
             )}
           </View>
         </ScrollView>
@@ -455,7 +441,6 @@ export default function SmartHomeControlScreen() {
         room={settingsRoom}
         onClose={() => setSettingsRoomId(null)}
         onRename={renameRoom}
-        onDelete={deleteRoom}
         onToggleDeviceMode={toggleDeviceMode}
         onToggleDevicePower={toggleDevicePower}
         onDeleteDevice={deleteDevice}
@@ -736,6 +721,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     backgroundColor: colors.card,
+  },
+  // 삭제 확인 등 짝을 이루는 버튼 없이 "닫기" 버튼 하나만 쓸 때는 flex:1이 세로로 늘어나
+  // 보이므로 상쇄한다(MainScreen의 절전 목표 모달과 동일한 패턴).
+  modalCloseButtonSolo: {
+    flex: 0,
+    marginTop: 16,
   },
   modalCloseText: {
     fontFamily: fonts.jalnan,

@@ -90,6 +90,7 @@ class HomeSummary(BaseModel):
     humidity: Optional[float]
     temperature: Optional[float]
     presence: Optional[bool] = None
+    last_motion_at: Optional[str] = None
 
 
 class SeriesPoint(BaseModel):
@@ -201,3 +202,61 @@ class AutomationRuleOut(BaseModel):
     room_id: int
     action: dict
     enabled: bool
+
+
+class SleepPresetOut(BaseModel):
+    light_on: bool
+    aircon_on: bool
+    aircon_temp: int
+    dehumidify: bool
+    humidifier_on: bool
+    tv_off: bool
+    pc_off: bool
+    bedtime_hour: int
+    no_motion_minutes: int
+    confirm_wait_minutes: int
+
+
+class SleepPresetUpdate(BaseModel):
+    light_on: Optional[bool] = None
+    aircon_on: Optional[bool] = None
+    aircon_temp: Optional[int] = None
+    dehumidify: Optional[bool] = None
+    humidifier_on: Optional[bool] = None
+    tv_off: Optional[bool] = None
+    pc_off: Optional[bool] = None
+    bedtime_hour: Optional[int] = None
+    no_motion_minutes: Optional[int] = None
+    confirm_wait_minutes: Optional[int] = None
+
+
+class SleepRecordOut(BaseModel):
+    id: int
+    sleep_started_at: str
+    sleep_ended_at: Optional[str] = None
+
+
+class SleepRecordCreate(BaseModel):
+    sleep_started_at: str
+
+
+class SleepRecordEnd(BaseModel):
+    sleep_ended_at: str
+
+
+class ClassifyIn(BaseModel):
+    model: Literal["life_pattern"]
+    label: str
+    confidence: Optional[float] = None
+
+
+class PatternEventOut(BaseModel):
+    label: str
+    confidence: Optional[float] = None
+    recorded_at: str
+
+
+class PatternSegment(BaseModel):
+    label: str
+    started_at: str
+    ended_at: Optional[str] = None

@@ -101,3 +101,44 @@ create table if not exists automation_rules (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_automation_rules_room on automation_rules(room_id);
+
+-- 취침 모드 프리셋 + 취침 감지 설정 - SleepModeScreen이 사용.
+-- app_settings와 같은 이유로(로그인/멀티유저 없는 프로토타입) 딱 한 행(id=1)만 쓰는 싱글턴.
+create table if not exists sleep_preset (
+  id int primary key default 1,
+  light_on boolean not null default false,
+  aircon_on boolean not null default true,
+  aircon_temp int not null default 22,
+  dehumidify boolean not null default true,
+  humidifier_on boolean not null default true,
+  tv_off boolean not null default true,
+  pc_off boolean not null default true,
+  bedtime_hour int not null default 20 check (bedtime_hour between 0 and 23),
+  no_motion_minutes int not null default 30 check (no_motion_minutes > 0),
+  confirm_wait_minutes int not null default 5 check (confirm_wait_minutes > 0),
+  constraint sleep_preset_singleton check (id = 1)
+);
+insert into sleep_preset (id) values (1) on conflict (id) do nothing;
+
+-- 완료된 취침 세션 기록 - SleepStatsScreen(수면 통계)이 사용.
+-- 취침 모드가 활성화될 때 sleep_started_at만 채워 한 행이 생기고, 기상이 감지되면 같은 행에
+-- sleep_ended_at을 채운다(진행 중인 세션은 sleep_ended_at이 null).
+create table if not exists sleep_records (
+  id bigserial primary key,
+  sleep_started_at timestamptz not null,
+  sleep_ended_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_sleep_records_started on sleep_records(sleep_started_at desc);
+
+-- 생활 패턴 분류 결과(침대/책상/이동/외출) - 비전 모델(life_pattern_vision_node)이 push하는 값을 저장.
+-- 아직 모델이 배포되기 전에는 이 테이블이 비어 있고, LifePatternScreen은 그 상태를 그대로 안내한다.
+create table if not exists classification_events (
+  id bigserial primary key,
+  device_id text not null references devices(id),
+  model text not null check (model in ('life_pattern')),
+  label text not null,
+  confidence double precision,
+  recorded_at timestamptz not null default now()
+);
+create index if not exists idx_classification_device_time on classification_events(device_id, recorded_at desc);

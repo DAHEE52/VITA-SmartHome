@@ -14,6 +14,7 @@ const DEVICE_TYPES: { type: string; keywords: string[]; watt: number }[] = [
   { type: 'TV', keywords: ['tv', '티비', '텔레비전'], watt: 150 },
   { type: '컴퓨터', keywords: ['컴퓨터', 'pc', '모니터'], watt: 250 },
   { type: '공기청정기', keywords: ['공기청정기'], watt: 45 },
+  { type: '가습기', keywords: ['가습기'], watt: 30 },
   { type: '선풍기', keywords: ['선풍기'], watt: 50 },
   { type: '조명', keywords: ['조명', '전등', '램프', '스탠드'], watt: 40 },
 ];

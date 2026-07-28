@@ -1,15 +1,20 @@
 # VITA 하드웨어 노드 (XIAO ESP32S3)
 
-FastAPI 백엔드(`VITA/backend/`)와 HTTP로 통신하는 ESP32 펌웨어 4종. 각 폴더가 독립된 Arduino 스케치다.
+FastAPI 백엔드(`VITA/backend/`)와 HTTP로 통신하는 ESP32 펌웨어. 각 폴더가 독립된 Arduino 스케치다.
 
 | 폴더 | 하드웨어 | 역할 |
 |---|---|---|
-| `env_presence_node/` | XIAO ESP32S3 + BME280(I2C) + PIR(HC-SR501) | 온습도/재실(움직임) 감지, 30~60초마다 서버로 push |
+| `env_presence_node/` | XIAO ESP32S3 + BME280(I2C) + PIR(HC-SR501) | 온습도/재실(움직임) 감지, 30~60초마다 서버로 push. **취침 감지(SleepContext) 상태머신이 여기서 push하는 `motion` 값을 그대로 쓴다** - 별도 취침 전용 센서 없이도 무움직임 30분 판정이 가능함 |
 | `relay_node/` | XIAO ESP32S3 + 릴레이 모듈 | 기기 on/off 제어, 2~3초마다 대기 명령 poll |
 | `power_monitor_node/` | XIAO ESP32S3 + PZEM-004T v3 | 전력 사용량 측정, 30~60초마다 서버로 push |
 | `presence_vision_node/` | XIAO ESP32S3 Sense(카메라) | Edge Impulse 비전 모델로 재실(occupied/empty) 프레임 분류, 8초마다 서버로 push. 움직임이 없어도(자는 중, TV 시청 중 등) 감지 가능. 추론 전 `<sketchbook>/libraries/vita-presence_inferencing` 라이브러리 설치 필요 |
+| `life_pattern_vision_node/` | XIAO ESP32S3 Sense(카메라) | **(미학습 - 아직 컴파일 안 됨)** 생활 패턴 4-class(침대/책상/이동/외출) 분류, `/devices/{id}/classify`로 push. `vita-life_pattern_inferencing` 라이브러리를 Edge Impulse에서 학습·다운로드해야 컴파일된다 |
 
-`presence_dataset_collector/`는 위 4개와 달리 상시 배포용이 아니라, `presence_vision_node`의 Edge Impulse 모델을 학습/재학습할 때만 임시로 올리는 데이터 수집용 스케치다(AP 핫스팟 + 사진 촬영 웹페이지, `http://192.168.4.1`).
+`presence_dataset_collector/`와 `life_pattern_dataset_collector/`는 위 노드들과 달리 상시 배포용이 아니라, 각각 `presence_vision_node`/`life_pattern_vision_node`의 Edge Impulse 모델을 학습/재학습할 때만 임시로 올리는 데이터 수집용 스케치다(AP 핫스팟 + 사진 촬영 웹페이지, `http://192.168.4.1`). `life_pattern_dataset_collector`는 라벨 입력창에 침대/책상/이동/외출 4개 버튼이 추가돼 있다 - `xiao-edgeimpulse-train` 스킬로 학습할 때 클래스당 80~100장(명세서 기준 총 400장) 정도 모으면 된다.
+
+## 스코프에서 제외한 것 - 취침 3-class 비전 모델
+
+명세서의 "AI 모델 2: 취침/기상 감지"(Person_Normal/Person_Blanket/Person_Sleeping 3-class)는 이번 구현에서 만들지 않았다. SleepContext(앱)의 4단계 상태머신이 이미 PIR `motion` + 카메라 `presence`만으로 스펙이 요구하는 판정(재실+조명OFF+시간 조건 → 30분 무움직임 → 확인 알림 → 자동 활성화)을 전부 구현하기 때문에, 별도 비전 모델 없이도 기능은 완성된다. 정확도를 더 높이고 싶을 때(예: 앉아서 무움직임인데 안 자는 경우 구분)만 나중에 추가하는 스트레치 항목으로 남겨둔다.
 
 ## 공통 준비
 

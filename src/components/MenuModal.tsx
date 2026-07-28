@@ -88,6 +88,24 @@ const MENU_ITEMS: MenuItem[] = [
     ),
   },
   {
+    key: 'sleepMode',
+    label: '취침 모드 관리',
+    route: 'SleepMode',
+    renderIcon: () => <Text style={{ fontSize: ICON_SIZE - 4 }}>🛏</Text>,
+  },
+  {
+    key: 'sleepStats',
+    label: '수면 통계',
+    route: 'SleepStats',
+    renderIcon: () => <Text style={{ fontSize: ICON_SIZE - 4 }}>💤</Text>,
+  },
+  {
+    key: 'lifePattern',
+    label: '생활 패턴 분석',
+    route: 'LifePattern',
+    renderIcon: () => <Text style={{ fontSize: ICON_SIZE - 4 }}>🧭</Text>,
+  },
+  {
     key: 'settings',
     label: '설정',
     route: 'Settings',

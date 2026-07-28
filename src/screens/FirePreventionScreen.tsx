@@ -31,8 +31,10 @@ import {
   isHighRiskDevice,
   HIGH_RISK_KEYWORDS,
   sensorRiskLevel,
+  temperatureRiseRisk,
   RoomSensorReading,
   SENSOR_CAUTION_TEMP_C,
+  RISE_DANGER_DELTA_C,
 } from '../utils/fireRisk';
 
 const SCREEN_PADDING = 20;
@@ -66,9 +68,18 @@ function getDeviceRisk(room: Room): { level: RiskLevel; reason: string | null } 
   return { level: 'safe', reason: null };
 }
 
-// 센서 값만 근거로 한 위험도 + 이유 문구.
-function getSensorRisk(sensor: RoomSensorReading | undefined): { level: RiskLevel; reason: string | null } {
+// 센서 값만 근거로 한 위험도 + 이유 문구. 절대 온도 임계치뿐 아니라, 5분 내 5℃ 이상 급상승도
+// 별도로 위험 신호로 본다(화재 초기 - 아직 절대 온도는 안 높아도 오르는 속도 자체가 이상 징후).
+function getSensorRisk(
+  sensor: RoomSensorReading | undefined,
+  riseC: number
+): { level: RiskLevel; reason: string | null } {
   const level = sensorRiskLevel(sensor);
+  const riseLevel = temperatureRiseRisk(riseC);
+
+  if (riseLevel === 'danger') {
+    return { level: 'danger', reason: `5분 사이 온도가 ${riseC.toFixed(1)}℃나 올랐어요. 급격한 온도 상승이에요.` };
+  }
   if (level === 'safe' || !sensor) return { level: 'safe', reason: null };
   if (level === 'danger') {
     return { level, reason: `온도가 비정상적으로 높아요 (${sensor.temperatureC}°C).` };
@@ -83,9 +94,13 @@ function getSensorRisk(sensor: RoomSensorReading | undefined): { level: RiskLeve
 }
 
 // 기기 사용 패턴 위험도와 센서 위험도 중 더 심각한 쪽을 그 방의 최종 위험도로 삼는다.
-function getRoomRisk(room: Room, sensor: RoomSensorReading | undefined): { level: RiskLevel; reason: string | null } {
+function getRoomRisk(
+  room: Room,
+  sensor: RoomSensorReading | undefined,
+  riseC: number
+): { level: RiskLevel; reason: string | null } {
   const deviceRisk = getDeviceRisk(room);
-  const sensorRisk = getSensorRisk(sensor);
+  const sensorRisk = getSensorRisk(sensor, riseC);
   return RISK_RANK[sensorRisk.level] >= RISK_RANK[deviceRisk.level] ? sensorRisk : deviceRisk;
 }
 
@@ -155,15 +170,17 @@ function AnomalyRow({ room, device, now }: { room: string; device: Device; now: 
 function RoomRiskCard({
   room,
   sensor,
+  riseC,
   isSimulating,
   onToggleSimulate,
 }: {
   room: Room;
   sensor: RoomSensorReading | undefined;
+  riseC: number;
   isSimulating: boolean;
   onToggleSimulate: () => void;
 }) {
-  const { level, reason } = getRoomRisk(room, sensor);
+  const { level, reason } = getRoomRisk(room, sensor, riseC);
   const meta = RISK_META[level];
   const onDevices = room.devices.filter((d) => d.on);
 
@@ -204,7 +221,7 @@ function RoomRiskCard({
 export default function FirePreventionScreen() {
   const { rooms } = useRooms();
   const { autoActions, emergency, dismissEmergency } = useFireSafety();
-  const { readings, isSimulatingFire, simulateFire, clearSimulation } = useSensors();
+  const { readings, isSimulatingFire, simulateFire, clearSimulation, getTemperatureRiseC } = useSensors();
   const [now, setNow] = useState(() => Date.now());
 
   // 경과 시간 표시를 1초마다 갱신한다(실제 감시/자동 차단은 FireSafetyContext가 화면과 무관하게 처리).
@@ -213,7 +230,10 @@ export default function FirePreventionScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  const risks = rooms.map((room) => ({ room, risk: getRoomRisk(room, readings[room.id]) }));
+  const risks = rooms.map((room) => ({
+    room,
+    risk: getRoomRisk(room, readings[room.id], getTemperatureRiseC(room.id)),
+  }));
   const dangerCount = risks.filter((r) => r.risk.level === 'danger').length;
   const cautionCount = risks.filter((r) => r.risk.level === 'caution').length;
 
@@ -260,8 +280,9 @@ export default function FirePreventionScreen() {
 
         <Text style={styles.sectionTitle}>방별 화재 감지 센서</Text>
         <Text style={styles.sectionHint}>
-          방마다 온도·습도 센서 값을 보여줘요. 아직 실제 센서가 연결되지 않아 지금은 더미 값으로
-          채워지고 있고, 실제 센서가 연동되면 이 값이 그대로 실제 값으로 바뀌어요.
+          방마다 온도·습도 센서 값을 보여줘요. 절대 온도 임계치뿐 아니라 5분 내 {RISE_DANGER_DELTA_C}℃ 이상
+          급상승도 위험으로 감지해요. 아직 실제 센서가 연결되지 않아 지금은 더미 값으로 채워지고 있고,
+          실제 센서가 연동되면 이 값이 그대로 실제 값으로 바뀌어요.
         </Text>
         {rooms.length > 0 ? (
           rooms.map((room) => (
@@ -269,6 +290,7 @@ export default function FirePreventionScreen() {
               key={room.id}
               room={room}
               sensor={readings[room.id]}
+              riseC={getTemperatureRiseC(room.id)}
               isSimulating={isSimulatingFire(room.id)}
               onToggleSimulate={() =>
                 isSimulatingFire(room.id) ? clearSimulation(room.id) : simulateFire(room.id)

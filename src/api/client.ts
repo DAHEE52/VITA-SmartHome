@@ -11,6 +11,7 @@ export type HomeSummary = {
   humidity: number | null;
   temperature: number | null;
   presence: boolean | null;
+  last_motion_at: string | null;
 };
 
 export type DeviceStatus = {
@@ -252,4 +253,67 @@ export function updateAutomationRule(
 
 export function deleteAutomationRule(id: number): Promise<{ ok: boolean }> {
   return request(`/automation-rules/${id}`, { method: 'DELETE' });
+}
+
+// --- 취침 모드(sleep_preset/sleep_records) ---
+
+export type SleepPreset = {
+  light_on: boolean;
+  aircon_on: boolean;
+  aircon_temp: number;
+  dehumidify: boolean;
+  humidifier_on: boolean;
+  tv_off: boolean;
+  pc_off: boolean;
+  bedtime_hour: number;
+  no_motion_minutes: number;
+  confirm_wait_minutes: number;
+};
+
+export function getSleepPreset(): Promise<SleepPreset> {
+  return request<SleepPreset>('/sleep/preset');
+}
+
+export function updateSleepPreset(body: Partial<SleepPreset>): Promise<SleepPreset> {
+  return request('/sleep/preset', { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export type SleepRecord = {
+  id: number;
+  sleep_started_at: string;
+  sleep_ended_at: string | null;
+};
+
+export function getSleepRecords(period: Period): Promise<SleepRecord[]> {
+  return request<SleepRecord[]>(`/sleep/records?period=${period}`);
+}
+
+export function startSleepRecord(sleepStartedAt: string): Promise<SleepRecord> {
+  return request('/sleep/records', { method: 'POST', body: JSON.stringify({ sleep_started_at: sleepStartedAt }) });
+}
+
+export function endSleepRecord(id: number, sleepEndedAt: string): Promise<SleepRecord> {
+  return request(`/sleep/records/${id}`, { method: 'PATCH', body: JSON.stringify({ sleep_ended_at: sleepEndedAt }) });
+}
+
+// --- 생활 패턴 분류(classification_events) ---
+
+export type PatternEvent = {
+  label: string;
+  confidence: number | null;
+  recorded_at: string;
+};
+
+export type PatternSegment = {
+  label: string;
+  started_at: string;
+  ended_at: string | null;
+};
+
+export function getPatternLatest(): Promise<PatternEvent | null> {
+  return request<PatternEvent | null>('/pattern/latest');
+}
+
+export function getPatternToday(): Promise<PatternSegment[]> {
+  return request<PatternSegment[]>('/pattern/today');
 }

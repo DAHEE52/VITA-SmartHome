@@ -14,7 +14,7 @@ import React, { createContext, useContext, useState, useRef, useEffect, ReactNod
 import { useRooms } from './RoomsContext';
 import { useNotifications } from './NotificationsContext';
 import { useSensors } from './SensorContext';
-import { isAnomalousDevice, isHighRiskDevice, sensorRiskLevel } from '../utils/fireRisk';
+import { isAnomalousDevice, isHighRiskDevice, sensorRiskLevel, temperatureRiseRisk } from '../utils/fireRisk';
 
 const CHECK_INTERVAL_MS = 5000; // 5초마다 모든 기기/센서의 이상 여부를 검사한다.
 
@@ -49,7 +49,7 @@ function formatClock(d: Date) {
 export function FireSafetyProvider({ children }: { children: ReactNode }) {
   const { rooms, forceOffDevice, forceOffRoom } = useRooms();
   const { pushNotification } = useNotifications();
-  const { readings } = useSensors();
+  const { readings, getTemperatureRiseC } = useSensors();
 
   const [autoActions, setAutoActions] = useState<AutoAction[]>([]);
   const [emergency, setEmergency] = useState<EmergencyEvent | null>(null);
@@ -59,6 +59,8 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
   roomsRef.current = rooms;
   const readingsRef = useRef(readings);
   readingsRef.current = readings;
+  const getTemperatureRiseCRef = useRef(getTemperatureRiseC);
+  getTemperatureRiseCRef.current = getTemperatureRiseC;
   const forceOffDeviceRef = useRef(forceOffDevice);
   forceOffDeviceRef.current = forceOffDevice;
   const forceOffRoomRef = useRef(forceOffRoom);
@@ -111,15 +113,21 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
         }
 
         // 온도/습도 센서 기반 판정. 원인 기기를 특정할 수 없으므로 방 전체를 차단한다.
+        // 절대 온도 임계치 외에, 5분 내 급격한 온도 상승(temperatureRiseRisk)도 같은 비중으로 취급한다.
         const reading = readingsRef.current[room.id];
+        const riseC = getTemperatureRiseCRef.current(room.id);
         const level = sensorRiskLevel(reading);
-        if (level === 'danger') {
+        const riseLevel = temperatureRiseRisk(riseC);
+        if (level === 'danger' || riseLevel === 'danger') {
           if (alertedRoomsRef.current.has(room.id)) continue; // 이미 경보를 울린 뒤 계속 위험 상태 - 반복 실행하지 않음
           alertedRoomsRef.current.add(room.id);
 
           forceOffRoomRef.current(room.id);
 
-          const reason = `${room.label}의 온도가 비정상적으로 높아(${reading?.temperatureC}°C) 화재 위험으로 판단, 전원을 자동 차단했어요.`;
+          const reason =
+            riseLevel === 'danger'
+              ? `${room.label}의 온도가 5분 사이 ${riseC.toFixed(1)}℃ 급상승해 화재 위험으로 판단, 전원을 자동 차단했어요.`
+              : `${room.label}의 온도가 비정상적으로 높아(${reading?.temperatureC}°C) 화재 위험으로 판단, 전원을 자동 차단했어요.`;
 
           pushNotificationRef.current('🚨 화재 위험 자동 차단', reason);
 

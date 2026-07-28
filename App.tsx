@@ -20,6 +20,8 @@ import { CalendarProvider } from './src/context/CalendarContext';
 import { PresenceProvider } from './src/context/PresenceContext';
 import { AutomationProvider } from './src/context/AutomationContext';
 import { SensorProvider } from './src/context/SensorContext';
+import { SleepProvider } from './src/context/SleepContext';
+import { LifePatternProvider } from './src/context/LifePatternContext';
 
 // 네이티브 스플래시(앱 아이콘 로딩 화면)가 폰트 로딩 전에 자동으로 사라지지 않도록 유지시킨다.
 SplashScreenModule.preventAutoHideAsync().catch(() => {});
@@ -55,11 +57,15 @@ export default function App() {
                   <PresenceProvider>
                     <AutomationProvider>
                       <SensorProvider>
-                        <FireSafetyProvider>
-                          <SettingsProvider>
-                            <RootNavigator />
-                          </SettingsProvider>
-                        </FireSafetyProvider>
+                        <SleepProvider>
+                          <LifePatternProvider>
+                            <FireSafetyProvider>
+                              <SettingsProvider>
+                                <RootNavigator />
+                              </SettingsProvider>
+                            </FireSafetyProvider>
+                          </LifePatternProvider>
+                        </SleepProvider>
                       </SensorProvider>
                     </AutomationProvider>
                   </PresenceProvider>

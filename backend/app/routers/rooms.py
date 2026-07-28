@@ -43,6 +43,21 @@ def _latest_reading_per_device(metric: str) -> dict[str, float]:
     return latest
 
 
+def _latest_motion_at() -> str | None:
+    """PIR이 움직임을 감지(value==1)한 가장 최근 시각 - 취침 감지(SleepContext)의 '무움직임 경과' 판정 기준."""
+    supabase = get_supabase()
+    res = (
+        supabase.table("sensor_readings")
+        .select("recorded_at")
+        .eq("metric", "motion")
+        .eq("value", 1)
+        .order("recorded_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return res.data[0]["recorded_at"] if res.data else None
+
+
 @router.get("/home/summary", response_model=HomeSummary)
 def home_summary():
     supabase = get_supabase()
@@ -59,6 +74,7 @@ def home_summary():
         humidity=mean(humidity_values) if humidity_values else None,
         temperature=mean(temperature_values) if temperature_values else None,
         presence=any(v == 1 for v in presence_values) if presence_values else None,
+        last_motion_at=_latest_motion_at(),
     )
 
 

@@ -24,7 +24,9 @@ export type Device = { id: string; name: string; on: boolean; mode: DeviceMode; 
 // (AutomationContext)이 외출/외박/루틴 일정에 맞춰 자동으로 바꿀 수 있다.
 export type Room = { id: string; label: string; devices: Device[]; targetTemp: number };
 
-export const MAX_ROOMS = 12; // "+" 버튼으로 추가할 수 있는 방의 최대 개수
+// VITA는 원룸(하나의 방) 전용 서비스라 방을 여러 개 만들 필요가 없다 - 항상 방이 정확히 하나만
+// 존재하도록 고정하고(없으면 자동 생성), UI에서도 방 추가/삭제를 아예 제공하지 않는다.
+const DEFAULT_ROOM_LABEL = 'ROOM';
 const DEFAULT_TARGET_TEMP = 24;
 // 백엔드에 없는 값(모드/onSince/목표온도)만 담아두는 로컬 캐시. room id -> device id 로 중첩.
 const EXTRAS_STORAGE_KEY = 'vita.rooms.extras.v1';
@@ -36,9 +38,7 @@ type ExtrasStore = Record<
 
 type RoomsContextValue = {
   rooms: Room[];
-  addRoom: () => void;
   renameRoom: (id: string, label: string) => void;
-  deleteRoom: (id: string) => void;
   addDevice: (roomId: string, deviceName: string) => void;
   deleteDevice: (roomId: string, deviceName: string) => void;
   toggleDeviceMode: (roomId: string, deviceName: string) => void;
@@ -95,7 +95,11 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const [apiRooms, extras] = await Promise.all([api.getRooms(), loadExtras()]);
+        const [apiRoomsFetched, extras] = await Promise.all([api.getRooms(), loadExtras()]);
+        // 원룸 전용이라 방이 하나도 없으면(최초 설치 등) 자동으로 기본 방을 하나 만들어 항상
+        // 정확히 하나의 방만 존재하도록 보장한다 - 사용자가 직접 "방 추가"를 할 필요가 없다.
+        const apiRooms =
+          apiRoomsFetched.length > 0 ? apiRoomsFetched : [{ ...(await api.createRoom(DEFAULT_ROOM_LABEL)), devices: [] }];
         setRooms(applyExtras(apiRooms, extras));
       } catch (err) {
         console.warn('방 목록 불러오기 실패(백엔드 연결을 확인하세요):', err);
@@ -120,28 +124,9 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     );
   }, [rooms, loaded]);
 
-  const addRoom = () => {
-    if (roomsRef.current.length >= MAX_ROOMS) return;
-    const label = `ROOM ${roomsRef.current.length + 1}`;
-    api
-      .createRoom(label)
-      .then((created) => {
-        setRooms((prev) => [
-          ...prev,
-          { id: String(created.id), label: created.name, devices: [], targetTemp: DEFAULT_TARGET_TEMP },
-        ]);
-      })
-      .catch((err) => console.warn('방 추가 실패:', err));
-  };
-
   const renameRoom = (id: string, label: string) => {
     setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, label } : r)));
     api.renameRoom(Number(id), label).catch((err) => console.warn('방 이름 변경 실패:', err));
-  };
-
-  const deleteRoom = (id: string) => {
-    setRooms((prev) => prev.filter((r) => r.id !== id));
-    api.deleteRoom(Number(id)).catch((err) => console.warn('방 삭제 실패:', err));
   };
 
   // 새 기기를 지정한 방의 기기 목록에 등록한다. 실제 ESP32가 없으니 mock-register로 하드웨어의
@@ -288,9 +273,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     <RoomsContext.Provider
       value={{
         rooms,
-        addRoom,
         renameRoom,
-        deleteRoom,
         addDevice,
         deleteDevice,
         toggleDeviceMode,

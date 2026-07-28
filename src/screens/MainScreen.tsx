@@ -13,6 +13,7 @@ import {
   Modal,
   Pressable,
   TextInput,
+  ScrollView,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -42,6 +43,11 @@ import {
 } from '../components/icons';
 import { useGoal, HouseholdSize } from '../context/GoalContext';
 import { useNotifications } from '../context/NotificationsContext';
+import { useEnergyHistory } from '../context/EnergyHistoryContext';
+import { useSleep } from '../context/SleepContext';
+import { useRooms } from '../context/RoomsContext';
+import { usePresence } from '../context/PresenceContext';
+import { calcBill } from '../utils/energy';
 import MenuModal from '../components/MenuModal';
 import NotificationsModal from '../components/NotificationsModal';
 
@@ -361,6 +367,170 @@ function GoalCard({ scale }: { scale: number }) {
   );
 }
 
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
+}
+function todayKey(d: Date) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function dayFractionElapsed(now: Date): number {
+  const seconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  return Math.max(0.02, seconds / 86400);
+}
+function formatWon(n: number) {
+  return `${Math.round(n).toLocaleString('ko-KR')}원`;
+}
+
+// 실시간 절감액 카드 - 명세서 5번 항목("절감액 실시간 계산 & 표시").
+// 새 백엔드 없이 이미 있는 EnergyHistoryContext(실측 누적 kWh)와 GoalContext(가구 인원 평균 대비
+// 목표)를 조합해서 계산한다: 가구 평균(HOUSEHOLD_AVG_KWH)을 "절약 안 했을 때의 기준선"으로 삼고,
+// 지금까지 지난 시간 비율만큼의 기준 사용량보다 실제로 적게 썼으면 그 차이를 절감액으로 환산한다.
+function SavingsCard({ scale }: { scale: number }) {
+  const { householdSize, goalKwh } = useGoal();
+  const { dailyUsage } = useEnergyHistory();
+
+  if (householdSize == null || goalKwh == null) {
+    return (
+      <Card style={[styles.savingsCard, { padding: 18 * scale }]}>
+        <Text style={[styles.savingsTitle, { fontSize: 15 * scale }]}>💰 실시간 절감액</Text>
+        <Text style={[styles.savingsEmptyHint, { fontSize: 12 * scale, marginTop: 8 * scale }]}>
+          절전 목표를 설정하면 절감액을 계산해드려요.
+        </Text>
+      </Card>
+    );
+  }
+
+  const baselineMonthlyKwh = HOUSEHOLD_AVG_KWH[householdSize];
+  const baselineDailyKwh = baselineMonthlyKwh / 30;
+  const unitPrice = calcBill(baselineMonthlyKwh).total / baselineMonthlyKwh;
+
+  const now = new Date();
+  const dayFraction = dayFractionElapsed(now);
+  const todayUsageKwh = dailyUsage[todayKey(now)] ?? 0;
+  const todaySavedKwh = Math.max(0, baselineDailyKwh * dayFraction - todayUsageKwh);
+  const todaySavedWon = todaySavedKwh * unitPrice;
+
+  const monthPrefix = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-`;
+  const monthUsageKwh = Object.entries(dailyUsage)
+    .filter(([key]) => key.startsWith(monthPrefix))
+    .reduce((sum, [, v]) => sum + v, 0);
+  const daysSoFar = now.getDate() - 1 + dayFraction;
+  const monthSavedKwh = Math.max(0, baselineDailyKwh * daysSoFar - monthUsageKwh);
+  const monthSavedWon = monthSavedKwh * unitPrice;
+
+  const annualGoalSavingKwh = Math.max(0, baselineMonthlyKwh - goalKwh);
+  const annualSavedWon = annualGoalSavingKwh * unitPrice * 12;
+
+  return (
+    <Card style={[styles.savingsCard, { padding: 18 * scale }]}>
+      <Text style={[styles.savingsTitle, { fontSize: 15 * scale }]}>💰 실시간 절감액</Text>
+      <View style={[styles.savingsRow, { marginTop: 12 * scale }]}>
+        <View style={styles.savingsCol}>
+          <Text style={[styles.savingsLabel, { fontSize: 12 * scale }]}>오늘</Text>
+          <Text style={[styles.savingsValue, { fontSize: 16 * scale }]}>{formatWon(todaySavedWon)}</Text>
+        </View>
+        <View style={styles.savingsCol}>
+          <Text style={[styles.savingsLabel, { fontSize: 12 * scale }]}>이번 달</Text>
+          <Text style={[styles.savingsValue, { fontSize: 16 * scale }]}>{formatWon(monthSavedWon)}</Text>
+        </View>
+        <View style={styles.savingsCol}>
+          <Text style={[styles.savingsLabel, { fontSize: 12 * scale }]}>목표 달성 시 연간</Text>
+          <Text style={[styles.savingsValue, { fontSize: 16 * scale }]}>{formatWon(annualSavedWon)}</Text>
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+// 규칙 기반 "AI 추천" 배너 - 명세서 6번 항목("간단한 AI 추천"). ML 없이 현재 재실/기기 상태만으로
+// 우선순위가 가장 높은 추천 한 가지만 골라 보여준다.
+function useAiRecommendation(): string | null {
+  const { isHome } = usePresence();
+  const { rooms } = useRooms();
+  const onDevices = rooms.flatMap((r) => r.devices.filter((d) => d.on));
+
+  if (!isHome && onDevices.length > 0) {
+    return `외출 중인데 ${onDevices[0].name}이(가) 켜져 있어요. 꺼두면 절약할 수 있어요!`;
+  }
+  return null;
+}
+
+function AiRecommendationBanner({ scale }: { scale: number }) {
+  const message = useAiRecommendation();
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    setDismissed(false);
+  }, [message]);
+
+  if (!message || dismissed) return null;
+
+  return (
+    <Card style={[styles.aiCard, { padding: 16 * scale }]}>
+      <View style={styles.aiRow}>
+        <Text style={[styles.aiText, { fontSize: 13 * scale }]}>💡 {message}</Text>
+        <AnimatedPressable hitSlop={10} onPress={() => setDismissed(true)}>
+          <Text style={[styles.aiDismiss, { fontSize: 13 * scale }]}>닫기</Text>
+        </AnimatedPressable>
+      </View>
+    </Card>
+  );
+}
+
+// "😴 수면 중" 배너 - SleepContext.state가 active일 때만 보인다.
+function SleepBanner({ scale }: { scale: number }) {
+  const { state } = useSleep();
+  if (state !== 'active') return null;
+  return (
+    <Card style={[styles.sleepBanner, { padding: 14 * scale }]}>
+      <Text style={[styles.sleepBannerText, { fontSize: 14 * scale }]}>😴 수면 중 - 취침 모드가 활성화됐어요</Text>
+    </Card>
+  );
+}
+
+// "취침 중이신가요?" 확인 모달 - SleepContext.state가 confirming일 때 자동으로 뜬다.
+// 확인 대기 시간(preset.confirm_wait_minutes) 동안 카운트다운을 보여주고, 응답이 없으면
+// SleepContext가 알아서 자동으로 취침 모드를 활성화한다(이 모달은 그때 스스로 닫힌다).
+function SleepConfirmModal() {
+  const { state, preset, confirmStartedAt, confirm, dismiss } = useSleep();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (state !== 'confirming') return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [state]);
+
+  if (state !== 'confirming' || !preset || confirmStartedAt == null) return null;
+
+  const remainingMs = Math.max(0, preset.confirm_wait_minutes * 60000 - (now - confirmStartedAt));
+  const remainingMin = Math.floor(remainingMs / 60000);
+  const remainingSec = Math.floor((remainingMs % 60000) / 1000);
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>취침 중이신가요?</Text>
+          <Text style={styles.modalSubtitle}>
+            {preset.no_motion_minutes}분간 움직임이 없었어요. 응답이 없으면{' '}
+            {String(remainingMin).padStart(2, '0')}:{String(remainingSec).padStart(2, '0')} 후 자동으로 취침
+            모드가 활성화돼요.
+          </Text>
+          <View style={styles.modalBottomRow}>
+            <AnimatedPressable style={styles.modalCloseButton} onPress={dismiss} activeOpacity={0.7}>
+              <Text style={styles.modalCloseText}>나중에</Text>
+            </AnimatedPressable>
+            <AnimatedPressable style={styles.renameSaveButtonWide} onPress={confirm} activeOpacity={0.7}>
+              <Text style={styles.renameSaveText}>확인</Text>
+            </AnimatedPressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const MENU_GAP = 4;
 
 // 스마트홈 제어 / 캘린더 / 에너지 사용량 / 에너지 나무로 이동하는 4개 바로가기 카드
@@ -411,25 +581,28 @@ export default function MainScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <Header scale={scale} />
-      {/* 블록 사이 최소 간격은 BLOCK_GAP으로 유지하되, 화면에 남는 여유 공간은 하단 네비 위에
-          몰아주지 않고 flex:1 + justifyContent:'space-evenly'로 다섯 틈(로고 밑, 블록 3개 사이,
-          메뉴~하단 네비)에 고르게 나눠줘서 하단에만 큰 빈 공간이 생기지 않도록 한다. */}
-      <View
-        style={[
-          styles.middleContent,
-          { flex: 1, gap: BLOCK_GAP * scale, justifyContent: 'space-evenly' },
-        ]}
+      {/* 기존 4블록(시계/상태/목표/메뉴)은 화면 높이에 맞춰 scale로 줄어드는 원래 레이아웃을 그대로
+          쓰고, 명세서에서 새로 추가된 카드들(절감액/AI추천/수면중 배너)은 그 아래 스크롤 영역에
+          이어 붙인다 - 화면이 넉넉하면 스크롤 없이 다 보이고, 작은 기기에서만 스크롤된다. */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.middleContent, { gap: BLOCK_GAP * scale, paddingBottom: 12 * scale }]}
+        showsVerticalScrollIndicator={false}
       >
         <TimeCard scale={scale} />
         <StatusCard scale={scale} summary={summary} />
         <GoalCard scale={scale} />
+        <SleepBanner scale={scale} />
+        <AiRecommendationBanner scale={scale} />
+        <SavingsCard scale={scale} />
         <MenuGrid scale={scale} />
-      </View>
+      </ScrollView>
       {/* bottomNavWrap은 다른 화면들(Calendar/EnergyUsage/EnergyTree/SmartHomeControl)과
           동일하게 paddingTop:6, paddingBottom:10 고정값을 그대로 쓴다. */}
       <View style={styles.bottomNavWrap}>
         <BottomNav variant="main" />
       </View>
+      <SleepConfirmModal />
     </SafeAreaView>
   );
 }
@@ -506,6 +679,59 @@ const styles = StyleSheet.create({
   statusValue: {
     fontFamily: fonts.jalnan,
     color: colors.text,
+  },
+  savingsCard: {},
+  savingsTitle: {
+    fontFamily: fonts.jalnan,
+    color: colors.text,
+  },
+  savingsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  savingsCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  savingsLabel: {
+    color: colors.textGray,
+  },
+  savingsValue: {
+    fontFamily: fonts.jalnan,
+    color: colors.orange,
+    marginTop: 4,
+  },
+  savingsEmptyHint: {
+    color: colors.textGray,
+  },
+
+  aiCard: {
+    backgroundColor: colors.yellow,
+  },
+  aiRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  aiText: {
+    flex: 1,
+    color: colors.text,
+    lineHeight: 18,
+  },
+  aiDismiss: {
+    fontFamily: fonts.jalnan,
+    color: colors.text,
+    textDecorationLine: 'underline',
+  },
+
+  sleepBanner: {
+    backgroundColor: colors.chartBlue,
+  },
+  sleepBannerText: {
+    fontFamily: fonts.jalnan,
+    color: colors.white,
+    textAlign: 'center',
   },
 
   goalCard: {},

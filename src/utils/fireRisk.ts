@@ -22,6 +22,8 @@ const NORMAL_DURATION_MS: Record<string, number> = {
   에어컨: 10 * 60 * 1000,
   냉장고: Infinity,
   공기청정기: Infinity,
+  가습기: Infinity, // 취침 모드에서 밤새 켜두는 게 정상이라 상시 가동 허용
+
   TV: 15 * 60 * 1000,
   컴퓨터: 15 * 60 * 1000,
   선풍기: 15 * 60 * 1000,
@@ -66,4 +68,13 @@ export function sensorRiskLevel(reading: RoomSensorReading | undefined): SensorR
     return 'caution';
   }
   return 'safe';
+}
+
+// 명세서 3번 항목 "AI 화재 예방 감지" - 절대 온도가 아직 위험 임계치에 못 미쳐도, 짧은 시간에 급격히
+// 오르는 것 자체가 화재 초기 징후라 별도로 감지한다(SensorContext.getTemperatureRiseC와 짝).
+export const RISE_WINDOW_MS = 5 * 60 * 1000; // 5분
+export const RISE_DANGER_DELTA_C = 5; // 5분 내 5℃ 이상 상승하면 위험
+
+export function temperatureRiseRisk(riseC: number): SensorRiskLevel {
+  return riseC >= RISE_DANGER_DELTA_C ? 'danger' : 'safe';
 }

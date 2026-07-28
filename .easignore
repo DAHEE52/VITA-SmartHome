@@ -1,0 +1,17 @@
+# EAS Build 업로드 아카이브에서 제외할 파일들.
+# .agents/skills/*는 .claude/skills/*를 가리키는 심볼릭 링크라, Windows에서 EAS가 빌드 아카이브를
+# 만들 때 심볼릭 링크를 다시 만들지 못해(EPERM) 업로드 자체가 실패한다 - 앱 빌드에 필요 없는
+# Claude Code 툴링 메타데이터라 통째로 제외한다.
+.agents/
+.claude/
+
+# 앱 번들에 필요 없는 백엔드/펌웨어(별도 배포 대상)
+backend/
+firmware/
+
+# 의존성/빌드 산출물
+node_modules/
+.expo/
+dist/
+web-build/
+builds/
