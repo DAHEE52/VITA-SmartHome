@@ -49,8 +49,8 @@ import NotificationsModal from '../components/NotificationsModal';
 const REFERENCE_HEIGHT = 820;
 const MIN_SCALE = 0.78;
 
-// 시계/상태/목표/메뉴 4개 회색 블록 사이의 간격. 기존 space-between 자동 분배 값(약 31.6, scale=1
-// 기준)의 절반 정도로 고정했다가, 요청에 따라 한 번 더 살짝 줄인 값.
+// 시계/상태/목표/메뉴 4개 회색 블록 사이의 최소 간격(iPhone 기준 스케일에서의 값). 화면에 남는
+// 여유 공간은 이 최소값 위에 justifyContent:'space-evenly'로 고르게 더해진다.
 const BLOCK_GAP = 12;
 
 // 상단 헤더: 좌측 VITA 로고, 우측 메뉴/알림/설정 아이콘 3개.
@@ -64,7 +64,7 @@ function Header({ scale }: { scale: number }) {
   const { unreadCount } = useNotifications();
 
   return (
-    <View style={[styles.header, { paddingTop: 6 * scale, paddingBottom: 0 }]}>
+    <View style={[styles.header, { paddingTop: 2 * scale, paddingBottom: 0 }]}>
       <VitaLogo size={HEADER_ICON_SIZE} />
       <View style={styles.headerIcons}>
         <AnimatedPressable hitSlop={12} onPress={() => setMenuVisible(true)}>
@@ -102,9 +102,9 @@ function TimeCard({ scale }: { scale: number }) {
   }, []);
 
   return (
-    <Card style={[styles.timeCard, { padding: 20 * scale }]}>
-      <Text style={[styles.dayLabel, { fontSize: 26 * scale }]}>Wen</Text>
-      <Text style={[styles.timeText, { fontSize: 92 * scale, marginTop: 4 * scale }]}>
+    <Card style={[styles.timeCard, { padding: 14 * scale }]}>
+      <Text style={[styles.dayLabel, { fontSize: 20 * scale }]}>Wen</Text>
+      <Text style={[styles.timeText, { fontSize: 68 * scale, marginTop: 2 * scale }]}>
         {formatTime(now)}
       </Text>
     </Card>
@@ -411,17 +411,20 @@ export default function MainScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <Header scale={scale} />
-      {/* 로고~시계, 블록 사이, 메뉴~하단 네비까지 전부 BLOCK_GAP 하나로 통일된 리듬을 갖도록
-          paddingTop(로고 밑 첫 간격)과 gap(블록 사이 간격)을 같은 값으로 준다. */}
-      <View style={[styles.middleContent, { paddingTop: BLOCK_GAP * scale, gap: BLOCK_GAP * scale }]}>
+      {/* 블록 사이 최소 간격은 BLOCK_GAP으로 유지하되, 화면에 남는 여유 공간은 하단 네비 위에
+          몰아주지 않고 flex:1 + justifyContent:'space-evenly'로 다섯 틈(로고 밑, 블록 3개 사이,
+          메뉴~하단 네비)에 고르게 나눠줘서 하단에만 큰 빈 공간이 생기지 않도록 한다. */}
+      <View
+        style={[
+          styles.middleContent,
+          { flex: 1, gap: BLOCK_GAP * scale, justifyContent: 'space-evenly' },
+        ]}
+      >
         <TimeCard scale={scale} />
         <StatusCard scale={scale} summary={summary} />
         <GoalCard scale={scale} />
         <MenuGrid scale={scale} />
       </View>
-      {/* 홈 버튼(하단 네비)이 다른 화면들과 똑같이 화면 맨 아래에 붙어 있도록, 이 spacer가
-          flex:1로 남는 공간을 전부 떠안는다. 블록 사이 간격(BLOCK_GAP)에는 영향을 주지 않는다. */}
-      <View style={{ flex: 1 }} />
       {/* bottomNavWrap은 다른 화면들(Calendar/EnergyUsage/EnergyTree/SmartHomeControl)과
           동일하게 paddingTop:6, paddingBottom:10 고정값을 그대로 쓴다. */}
       <View style={styles.bottomNavWrap}>
