@@ -378,9 +378,9 @@ function RuleEditModal({
   );
 }
 
-// 재실 여부 카드 - 실제로는 카메라가 판단하지만, 아직 카메라 연동이 없어서 지금은 이 스위치로
-// "카메라가 이렇게 감지했다고 치고" 상태를 직접 시뮬레이션한다.
-function PresenceCard({ isHome, onToggle }: { isHome: boolean; onToggle: (v: boolean) => void }) {
+// 재실 여부 카드 - firmware/presence_vision_node 카메라가 실시간으로 감지한 결과를 그대로
+// 보여주기만 한다(스위치는 읽기 전용 표시용, 사용자가 직접 뒤집을 수 없음).
+function PresenceCard({ isHome }: { isHome: boolean }) {
   return (
     <Card style={styles.presenceCard}>
       <View style={styles.presenceRow}>
@@ -394,7 +394,7 @@ function PresenceCard({ isHome, onToggle }: { isHome: boolean; onToggle: (v: boo
         </View>
         <Switch
           value={isHome}
-          onValueChange={onToggle}
+          disabled
           trackColor={{ false: colors.card, true: colors.orange }}
           thumbColor={colors.white}
         />
@@ -407,7 +407,7 @@ export default function AutomationScreen() {
   const { rules, addRule, updateRule, deleteRule, toggleRuleEnabled } = useAutomation();
   const { dailyItems } = useCalendar();
   const { rooms } = useRooms();
-  const { isHome, setIsHome } = usePresence();
+  const { isHome } = usePresence();
 
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -426,7 +426,7 @@ export default function AutomationScreen() {
         contentContainerStyle={styles.contentInner}
         showsVerticalScrollIndicator={false}
       >
-        <PresenceCard isHome={isHome} onToggle={setIsHome} />
+        <PresenceCard isHome={isHome} />
 
         {rules.length === 0 ? (
           <Card style={styles.emptyCard}>

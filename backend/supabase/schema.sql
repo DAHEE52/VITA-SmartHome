@@ -10,7 +10,7 @@ create table if not exists rooms (
 create table if not exists devices (
   id text primary key,
   room_id bigint references rooms(id) on delete set null,
-  type text not null check (type in ('env_sensor', 'relay', 'power_monitor')),
+  type text not null check (type in ('env_sensor', 'relay', 'power_monitor', 'presence_cam')),
   label text,
   state text not null default 'off',
   last_seen_at timestamptz
@@ -20,6 +20,12 @@ create table if not exists devices (
 -- 새 프로젝트에서는 위 create table로 처음부터 room_id로 생성되므로 아래는 그냥 no-op.
 alter table devices add column if not exists room_id bigint references rooms(id) on delete set null;
 alter table devices drop column if exists room;
+
+-- 마이그레이션: presence_cam(카메라 재실 감지 노드) 타입 추가 전에 만들어진 기존 프로젝트용.
+-- 새 프로젝트에서는 위 create table의 check에 이미 포함되므로 그냥 no-op.
+alter table devices drop constraint if exists devices_type_check;
+alter table devices add constraint devices_type_check
+  check (type in ('env_sensor', 'relay', 'power_monitor', 'presence_cam'));
 
 create index if not exists idx_devices_room on devices(room_id);
 

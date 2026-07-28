@@ -2,7 +2,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-DeviceType = Literal["env_sensor", "relay", "power_monitor"]
+DeviceType = Literal["env_sensor", "relay", "power_monitor", "presence_cam"]
 CommandName = Literal["on", "off"]
 AckStatus = Literal["done", "failed"]
 Period = Literal["year", "month", "day"]
@@ -89,6 +89,7 @@ class HomeSummary(BaseModel):
     active_device_count: int
     humidity: Optional[float]
     temperature: Optional[float]
+    presence: Optional[bool] = None
 
 
 class SeriesPoint(BaseModel):

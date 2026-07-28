@@ -22,7 +22,7 @@ export type AutomationTrigger =
   | { kind: 'outing' } // 캘린더 SPECIAL 중 kind='outing'(외출 예정) 전체
   | { kind: 'overnight' } // 캘린더 SPECIAL 중 kind='overnight'(외박 일정) 전체
   | { kind: 'routine'; routineId: string } // 특정 DAILY(요일별 루틴) 항목 하나를 참조
-  | { kind: 'presence' }; // 재실/외출 여부(카메라로 판단, 지금은 PresenceContext 시뮬레이션)가 바뀔 때
+  | { kind: 'presence' }; // 재실/외출 여부(PresenceContext, 카메라 감지 결과)가 바뀔 때
 
 export type AutomationAction =
   | { kind: 'device_on'; deviceName: string }

@@ -51,11 +51,14 @@ def home_summary():
 
     humidity_values = list(_latest_reading_per_device("humidity").values())
     temperature_values = list(_latest_reading_per_device("temperature").values())
+    # 카메라(presence_cam)가 여러 대여도 "하나라도 재실로 감지"하면 재실로 본다.
+    presence_values = list(_latest_reading_per_device("presence").values())
 
     return HomeSummary(
         active_device_count=active_device_count,
         humidity=mean(humidity_values) if humidity_values else None,
         temperature=mean(temperature_values) if temperature_values else None,
+        presence=any(v == 1 for v in presence_values) if presence_values else None,
     )
 
 

@@ -1,12 +1,15 @@
 # VITA 하드웨어 노드 (XIAO ESP32S3)
 
-FastAPI 백엔드(`VITA/backend/`)와 HTTP로 통신하는 ESP32 펌웨어 3종. 각 폴더가 독립된 Arduino 스케치다.
+FastAPI 백엔드(`VITA/backend/`)와 HTTP로 통신하는 ESP32 펌웨어 4종. 각 폴더가 독립된 Arduino 스케치다.
 
 | 폴더 | 하드웨어 | 역할 |
 |---|---|---|
-| `env_presence_node/` | XIAO ESP32S3 + BME280(I2C) + PIR(HC-SR501) | 온습도/재실 감지, 30~60초마다 서버로 push |
+| `env_presence_node/` | XIAO ESP32S3 + BME280(I2C) + PIR(HC-SR501) | 온습도/재실(움직임) 감지, 30~60초마다 서버로 push |
 | `relay_node/` | XIAO ESP32S3 + 릴레이 모듈 | 기기 on/off 제어, 2~3초마다 대기 명령 poll |
 | `power_monitor_node/` | XIAO ESP32S3 + PZEM-004T v3 | 전력 사용량 측정, 30~60초마다 서버로 push |
+| `presence_vision_node/` | XIAO ESP32S3 Sense(카메라) | Edge Impulse 비전 모델로 재실(occupied/empty) 프레임 분류, 8초마다 서버로 push. 움직임이 없어도(자는 중, TV 시청 중 등) 감지 가능. 추론 전 `<sketchbook>/libraries/vita-presence_inferencing` 라이브러리 설치 필요 |
+
+`presence_dataset_collector/`는 위 4개와 달리 상시 배포용이 아니라, `presence_vision_node`의 Edge Impulse 모델을 학습/재학습할 때만 임시로 올리는 데이터 수집용 스케치다(AP 핫스팟 + 사진 촬영 웹페이지, `http://192.168.4.1`).
 
 ## 공통 준비
 

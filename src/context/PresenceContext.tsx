@@ -1,22 +1,42 @@
 // 집에 사람이 있는지(재실) 여부를 앱 전체에서 공유하는 Context.
-// 실제로는 카메라(영상 인식)로 재실 여부를 판단할 계획이지만, 아직 카메라 연동이 없으므로 지금은
-// AutomationContext가 참조하는 시뮬레이션 값으로 두고, 자동화 규칙 화면에서 사용자가 직접 상태를
-// 뒤집어 볼 수 있게 한다("카메라가 이렇게 판단했다고 치면" 스위치). 나중에 카메라 연동이 붙으면
-// setIsHome을 그쪽 감지 결과로 호출하도록 바꾸기만 하면 되고, 이 값을 쓰는 자동화 로직은 그대로 둘 수 있다.
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+// firmware/presence_vision_node(카메라 + Edge Impulse 비전 모델)가 백엔드로 보낸 감지 결과를
+// /home/summary의 presence 필드로 주기적으로 읽어와 반영한다. 아직 카메라가 한 번도 값을
+// 보낸 적이 없으면(presence: null) 서버가 판단 불가 상태이므로 이전 값을 그대로 유지한다.
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getHomeSummary } from '../api/client';
+
+const POLL_INTERVAL_MS = 15000;
 
 type PresenceContextValue = {
   isHome: boolean;
-  setIsHome: (isHome: boolean) => void;
 };
 
 const PresenceContext = createContext<PresenceContextValue | null>(null);
 
 export function PresenceProvider({ children }: { children: ReactNode }) {
-  // 기본값은 "집에 있음" - 카메라 연동 전까지는 항상 이 값에서 시작한다.
+  // 기본값은 "집에 있음" - 카메라가 아직 값을 보내기 전까지는 이 값에서 시작한다.
   const [isHome, setIsHome] = useState(true);
 
-  return <PresenceContext.Provider value={{ isHome, setIsHome }}>{children}</PresenceContext.Provider>;
+  useEffect(() => {
+    let cancelled = false;
+
+    const poll = () => {
+      getHomeSummary()
+        .then((summary) => {
+          if (!cancelled && summary.presence != null) setIsHome(summary.presence);
+        })
+        .catch((err) => console.warn('재실 상태 조회 실패:', err));
+    };
+
+    poll();
+    const timer = setInterval(poll, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  return <PresenceContext.Provider value={{ isHome }}>{children}</PresenceContext.Provider>;
 }
 
 export function usePresence() {

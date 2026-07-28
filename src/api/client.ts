@@ -3,13 +3,14 @@
 // FastAPI가 떠 있는 PC의 LAN IP로 설정해야 한다 (localhost는 휴대폰 자기 자신을 가리킴).
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-export type DeviceType = 'env_sensor' | 'relay' | 'power_monitor';
+export type DeviceType = 'env_sensor' | 'relay' | 'power_monitor' | 'presence_cam';
 export type Period = 'year' | 'month' | 'day';
 
 export type HomeSummary = {
   active_device_count: number;
   humidity: number | null;
   temperature: number | null;
+  presence: boolean | null;
 };
 
 export type DeviceStatus = {
