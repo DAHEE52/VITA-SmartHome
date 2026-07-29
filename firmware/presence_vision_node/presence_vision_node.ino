@@ -14,6 +14,7 @@
 
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include "esp_camera.h"
 #include "esp_heap_caps.h"
@@ -49,6 +50,11 @@ unsigned long lastClassifyMs = 0;
 bool cameraReady = false;
 uint8_t *snapshot_buf = nullptr;
 
+// 백엔드가 AWS Lambda Function URL(HTTPS 전용)로 배포되어 있어 TLS 클라이언트가 필요하다.
+// 서버 인증서를 별도로 검증하지 않는다(setInsecure) - X-Device-Key 헤더로 기기를 인증하는
+// 기존 신뢰 모델을 그대로 쓰고, 전송 구간 암호화만 추가하는 목적.
+WiFiClientSecure secureClient;
+
 // SDK의 malloc/calloc/free는 weak symbol이라 여기서 재정의하면 모델 텐서 arena를
 // 내부 RAM 대신 PSRAM에 둘 수 있다(큰 비전 모델은 내부 RAM만으로 부족).
 void *ei_malloc(size_t size) {
@@ -78,7 +84,7 @@ void connectWiFi() {
 
 int postJson(const String &path, JsonDocument &doc) {
   HTTPClient http;
-  http.begin(String(API_BASE_URL) + path);
+  http.begin(secureClient, String(API_BASE_URL) + path);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Device-Key", DEVICE_KEY);
 
@@ -239,6 +245,7 @@ void setup() {
     Serial.println("카메라 없이는 동작할 수 없음 - 재부팅 대기");
   }
 
+  secureClient.setInsecure();
   connectWiFi();
   registerDevice();
 }

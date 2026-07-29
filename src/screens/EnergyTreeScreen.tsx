@@ -12,7 +12,7 @@
 // "그 달의 숲"과 "성장 트래커"는 둘 다 화면에 항상 박혀 있지 않고 버튼을 눌러야 뜨는 팝업(Modal)이다.
 // 숲은 이 탭에 들어왔을 때 마침 오늘이 그 달의 마지막 날이면 버튼 없이도 자동으로 한 번 뜬다.
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -23,6 +23,8 @@ import BottomNav from '../components/BottomNav';
 import { SproutIcon, SaplingIcon, GrownTreeIcon } from '../components/icons';
 import { useEnergyHistory } from '../context/EnergyHistoryContext';
 import { useGoal } from '../context/GoalContext';
+import { useAppWindowDimensions } from '../hooks/useAppWindowDimensions';
+import { dateKey, daysInMonthOf, growthRate, hasUsageData, monthAchievementRate } from '../utils/goalProgress';
 
 const REFERENCE_HEIGHT = 820;
 const MIN_SCALE = 0.7;
@@ -31,91 +33,6 @@ const MIN_SCALE = 0.7;
 const CO2_FACTOR = 0.4781;
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0');
-}
-function dateKey(year: number, month0: number, day: number) {
-  return `${year}-${pad2(month0 + 1)}-${pad2(day)}`;
-}
-
-// 오늘 날짜는 아직 하루가 다 지나지 않았으므로, 하루 목표 전체가 아니라 "지금까지 지난 시간만큼의"
-// 목표와 비교해야 한다. 이 보정이 없으면 하루가 막 시작됐을 때도 실사용량이 하루 전체 목표보다
-// 항상 훨씬 작아서 성장률이 곧바로 100%에 가깝게 튀어버린다(절전 목표 달성률은 0%인데 오늘 성장률만
-// 100%로 나오던 오류의 원인). 자정 직후엔 지난 시간이 0에 가까워 분모가 너무 작아지지 않도록
-// 최소 비율(MIN_DAY_FRACTION)을 바닥으로 둔다.
-const MIN_DAY_FRACTION = 0.02; // 하루의 최소 2%(약 29분)는 지난 것으로 취급
-
-function isToday(year: number, month0: number, day: number, now: Date): boolean {
-  return year === now.getFullYear() && month0 === now.getMonth() && day === now.getDate();
-}
-
-function dayFractionElapsed(now: Date): number {
-  const seconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-  return seconds / 86400;
-}
-
-// 하루 성장률(0~1) - 절전 목표(GoalContext)와 동기화된 값이라, 목표 자체가 없으면(dailyTarget=null)
-// 비교할 기준이 없으므로 0(새싹 이전)이다. 목표가 있고 그날 실제 사용량이 없으면(아직 안 쌓였으면)도
-// 0, 있으면 목표 대비 적게 쓴 비율만큼 성장한다. 목표보다 많이 썼으면 0으로 바닥을 둔다.
-function growthRate(
-  dailyUsage: Record<string, number>,
-  dailyTarget: number | null,
-  year: number,
-  month0: number,
-  day: number
-): number {
-  if (dailyTarget == null) return 0;
-  const usage = dailyUsage[dateKey(year, month0, day)];
-  if (usage == null) return 0;
-
-  const now = new Date();
-  const effectiveTarget = isToday(year, month0, day, now)
-    ? dailyTarget * Math.max(MIN_DAY_FRACTION, dayFractionElapsed(now))
-    : dailyTarget;
-
-  return Math.max(0, Math.min(1, 1 - usage / effectiveTarget));
-}
-
-// growthRate와 달리 "그날 데이터가 실제로 있는지"만 알려준다 - 성장률이 0이어도(목표보다 많이 써서)
-// 데이터 자체는 있는 날과, 아예 기록이 없는 날(아무것도 없는 날)을 구분하기 위함.
-function hasUsageData(dailyUsage: Record<string, number>, year: number, month0: number, day: number): boolean {
-  return dailyUsage[dateKey(year, month0, day)] != null;
-}
-
-// 화분(DailyTree)의 성장률 - "오늘 하루만" 보는 growthRate와 달리, 이번 달 전체를 통틀어 절전 목표를
-// 얼마나 잘 지켰는지를 나타내는 "이번 달 절전 목표 달성률"이다. 데이터가 전혀 없으면(막 시작한
-// 시점) 0에서 시작하고, 완료된 날 중 목표 이내로 쓴 날이 쌓일수록 자란다. 오늘은 아직 하루가 안
-// 끝났으므로 지난 시간 비율만큼만 기여해서(0%→100% 서서히), 하루 시작 직후 갑자기 튀지 않는다.
-function monthAchievementRate(
-  dailyUsage: Record<string, number>,
-  dailyTarget: number | null,
-  year: number,
-  month0: number
-): number {
-  if (dailyTarget == null) return 0;
-  const now = new Date();
-  const daysInMonth = daysInMonthOf(year, month0);
-
-  let total = 0;
-  for (let d = 1; d <= daysInMonth; d++) {
-    const usage = dailyUsage[dateKey(year, month0, d)];
-    if (usage == null) continue;
-
-    if (isToday(year, month0, d, now)) {
-      const fraction = Math.max(MIN_DAY_FRACTION, dayFractionElapsed(now));
-      if (usage <= dailyTarget * fraction) total += fraction;
-    } else if (usage <= dailyTarget) {
-      total += 1;
-    }
-  }
-
-  return Math.max(0, Math.min(1, total / daysInMonth));
-}
-
-function daysInMonthOf(year: number, month0: number) {
-  return new Date(year, month0 + 1, 0).getDate();
-}
 
 // "에너지 나무" 위에 붙는 회색 알약 모양 라벨 - HealthcareScreen의 SectionPill과 동일한 스타일.
 function SectionPill({ label, scale }: { label: string; scale: number }) {
@@ -417,7 +334,7 @@ function StatRow({ savedKwh, scale }: { savedKwh: number; scale: number }) {
 }
 
 export default function EnergyTreeScreen() {
-  const { height } = useWindowDimensions();
+  const { height } = useAppWindowDimensions();
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
 
   const { dailyUsage } = useEnergyHistory();

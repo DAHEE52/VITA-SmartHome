@@ -2,11 +2,14 @@
 
 FastAPI 백엔드(`VITA/backend/`)와 HTTP로 통신하는 ESP32 펌웨어. 각 폴더가 독립된 Arduino 스케치다.
 
+실제 부품 배선/납땜 방법은 [WIRING_GUIDE.md](WIRING_GUIDE.md) 참고 (AC 전원을 다루는 안전 수칙 포함).
+
 | 폴더 | 하드웨어 | 역할 |
 |---|---|---|
 | `env_presence_node/` | XIAO ESP32S3 + BME280(I2C) + PIR(HC-SR501) | 온습도/재실(움직임) 감지, 30~60초마다 서버로 push. **취침 감지(SleepContext) 상태머신이 여기서 push하는 `motion` 값을 그대로 쓴다** - 별도 취침 전용 센서 없이도 무움직임 30분 판정이 가능함 |
 | `relay_node/` | XIAO ESP32S3 + 릴레이 모듈 | 기기 on/off 제어, 2~3초마다 대기 명령 poll |
 | `power_monitor_node/` | XIAO ESP32S3 + PZEM-004T v3 | 전력 사용량 측정, 30~60초마다 서버로 push |
+| `power_relay_node/` | XIAO ESP32S3 + PZEM-004T v3 + 릴레이 모듈 | 위 두 노드를 한 보드로 합친 스마트플러그형 노드 - device_id 하나로 전력 측정과 on/off 제어를 동시에 처리. 프로토타입 단계에서 "기기 하나 등록 → 측정+제어" 시나리오를 보여줄 때 씀 |
 | `env_power_hub_node/` | XIAO ESP32S3 + BME280 + BH1750(조도) + SSD1306 OLED + PZEM-004T v3 | 브레드보드_최종배치_v4.md의 "보드 1"용 - 온습도/조도는 `living-env-01`(env_sensor), 전력은 `living-power-01`(power_monitor) 두 device_id로 등록해 각각 push. OLED는 서버로 안 보내고 보드에서 로컬 표시 전용. PZEM은 RX=D2/TX=D3(다른 노드의 D6/D7과 다름 - I2C가 D4/D5를 쓰기 때문) |
 | `actuator_hub_node/` | XIAO ESP32S3 + PIR(HC-SR501) + 4채널 릴레이 | 브레드보드_최종배치_v4.md의 "보드 2"용 - PIR은 `living-presence-01`(env_sensor)로 motion을 30초마다 push, 릴레이 4개는 `living-relay-01~04`(relay)로 각각 등록해 2.5초마다 대기 명령 poll. `relay_node`(단일 채널)의 4채널 확장판 |
 | `presence_vision_node/` | XIAO ESP32S3 Sense(카메라) | Edge Impulse 비전 모델로 재실(occupied/empty) 프레임 분류, 8초마다 서버로 push. 움직임이 없어도(자는 중, TV 시청 중 등) 감지 가능. 추론 전 `<sketchbook>/libraries/vita-presence_inferencing` 라이브러리 설치 필요 |

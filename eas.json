@@ -9,7 +9,10 @@
       "android": {
         "buildType": "apk"
       },
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://yngndbonhttzfuptrjxrywoqs40iblyr.lambda-url.ap-northeast-2.on.aws"
+      }
     },
     "production": {
       "autoIncrement": true,

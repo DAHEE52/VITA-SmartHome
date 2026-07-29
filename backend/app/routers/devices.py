@@ -23,9 +23,12 @@ def register_device(body: DeviceRegister):
     if existing.data:
         # 재부팅 등으로 이미 등록된 기기가 다시 register를 호출한 경우 —
         # 방 배정/이름은 앱에서 관리하는 값이므로 덮어쓰지 않고 생존 신호만 갱신한다.
-        supabase.table("devices").update(
-            {"type": body.type, "last_seen_at": now_iso}
-        ).eq("id", body.device_id).execute()
+        # state는 예외 - body.state가 왔다는 건 릴레이가 방금 부팅하며 실제로 그 상태로
+        # 초기화됐다는 뜻이라, 정전/재부팅 전의 낡은 DB 값을 실제 물리 상태로 맞춰준다.
+        update: dict = {"type": body.type, "last_seen_at": now_iso}
+        if body.state is not None:
+            update["state"] = body.state
+        supabase.table("devices").update(update).eq("id", body.device_id).execute()
     else:
         label = body.label or f"unregistered-{uuid.uuid4().hex[:6]}"
         supabase.table("devices").insert(
@@ -34,6 +37,7 @@ def register_device(body: DeviceRegister):
                 "room_id": None,
                 "type": body.type,
                 "label": label,
+                "state": body.state or "off",
                 "last_seen_at": now_iso,
             }
         ).execute()

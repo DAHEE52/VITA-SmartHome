@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import automation, devices, energy, notifications, pattern, rooms, schedule, settings, sleep
+from app.routers import automation, devices, energy, notifications, rooms, schedule, settings, sleep
 
 app = FastAPI()
 
@@ -21,7 +21,6 @@ app.include_router(notifications.router)
 app.include_router(settings.router)
 app.include_router(automation.router)
 app.include_router(sleep.router)
-app.include_router(pattern.router)
 
 
 @app.get("/health")
@@ -31,4 +30,8 @@ def health():
 
 if __name__ == "__main__" :
     import uvicorn
-    uvicorn.run("API_main:app", host = "0.0.0.0", port = 8000,reload = True)
+    # reload=True(파일 변경 감지 시 자동 재시작)는 Windows에서 감시 프로세스 + 워커 프로세스로
+    # 나뉘어 실행되는데, 감시 프로세스만 죽이면 워커가 소켓을 쥔 채 orphan으로 남아 포트를 계속
+    # 점유하는 문제가 있었다(재시작해도 이전 코드가 계속 응답). 로컬 개발 편의보다 이 문제가
+    # 더 크므로 끈다 - 코드를 바꾸면 서버를 직접 껐다 켜야 한다.
+    uvicorn.run("API_main:app", host = "0.0.0.0", port = 8000, reload = False)

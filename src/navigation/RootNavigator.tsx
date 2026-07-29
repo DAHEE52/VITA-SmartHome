@@ -19,7 +19,6 @@ import SettingsScreen from '../screens/SettingsScreen';
 import AutomationScreen from '../screens/AutomationScreen';
 import SleepModeScreen from '../screens/SleepModeScreen';
 import SleepStatsScreen from '../screens/SleepStatsScreen';
-import LifePatternScreen from '../screens/LifePatternScreen';
 
 // 각 화면이 받는 파라미터 타입 정의. 전부 파라미터 없이 이동하므로 undefined.
 // 새 화면을 추가할 땐 여기 타입과 아래 <Stack.Screen> 둘 다 추가해야 함.
@@ -37,7 +36,6 @@ export type RootStackParamList = {
   Automation: undefined;
   SleepMode: undefined;
   SleepStats: undefined;
-  LifePattern: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -64,7 +62,6 @@ export default function RootNavigator() {
         <Stack.Screen name="Automation" component={AutomationScreen} />
         <Stack.Screen name="SleepMode" component={SleepModeScreen} />
         <Stack.Screen name="SleepStats" component={SleepStatsScreen} />
-        <Stack.Screen name="LifePattern" component={LifePatternScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -12,6 +12,8 @@ import React, { createContext, useContext, useState, useEffect, useRef, ReactNod
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import * as api from '../api/client';
+import { useNotifications } from './NotificationsContext';
+import { rollbackOnFailure } from '../utils/optimisticUpdate';
 
 // mode: 'auto'면 센서가 읽은 전원 상태(on)를 그대로 보여주기만 하고, 'manual'이면 센서 고장 등에
 // 대비해 사용자가 직접 on/off를 지정한 값이다. 평소엔 전부 'auto'로 시작한다.
@@ -19,7 +21,8 @@ export type DeviceMode = 'auto' | 'manual';
 // onSince: 이 기기가 마지막으로 켜진 시각(ms, Date.now()) - 꺼져 있으면 null.
 // 화재 예방 시스템(FireSafetyContext)이 "이 기기가 얼마나 오래 계속 켜져 있었는지" 판단하는 데 쓴다.
 // id: 백엔드 devices.id (예: ESP32가 등록한 값 또는 mock-register가 만든 값) - 서버 API 호출에 쓴다.
-export type Device = { id: string; name: string; on: boolean; mode: DeviceMode; onSince: number | null };
+// type: 'power_monitor'면 실제 전력 측정값이 있다는 뜻 - 방 설정 화면에서 실시간 W를 조회할지 판단하는 데 쓴다.
+export type Device = { id: string; name: string; on: boolean; mode: DeviceMode; onSince: number | null; type: api.DeviceType };
 // targetTemp: 이 방의 목표 온도(°C) - 사용자가 방 설정에서 직접 조정하거나, 자동화 규칙
 // (AutomationContext)이 외출/외박/루틴 일정에 맞춰 자동으로 바꿀 수 있다.
 export type Room = { id: string; label: string; devices: Device[]; targetTemp: number };
@@ -39,10 +42,11 @@ type ExtrasStore = Record<
 type RoomsContextValue = {
   rooms: Room[];
   renameRoom: (id: string, label: string) => void;
-  addDevice: (roomId: string, deviceName: string) => void;
-  deleteDevice: (roomId: string, deviceName: string) => void;
-  toggleDeviceMode: (roomId: string, deviceName: string) => void;
-  toggleDevicePower: (roomId: string, deviceName: string) => void;
+  connectDevice: (roomId: string, deviceId: string) => void;
+  renameDevice: (roomId: string, deviceId: string, name: string) => void;
+  deleteDevice: (roomId: string, deviceId: string) => void;
+  toggleDeviceMode: (roomId: string, deviceId: string) => void;
+  toggleDevicePower: (roomId: string, deviceId: string) => void;
   setDevicePower: (roomId: string, deviceName: string, on: boolean) => void;
   forceOffDevice: (roomId: string, deviceName: string) => void;
   forceOffRoom: (roomId: string) => void;
@@ -77,6 +81,7 @@ function applyExtras(apiRooms: api.RoomWithDevices[], extras: ExtrasStore): Room
           on: d.state === 'on',
           mode: deviceExtra?.mode ?? 'auto',
           onSince: deviceExtra?.onSince ?? null,
+          type: d.type,
         };
       }),
     };
@@ -91,6 +96,10 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   // 조회할 때 stale closure 없이 쓰기 위함.
   const roomsRef = useRef<Room[]>(rooms);
   roomsRef.current = rooms;
+  const { pushNotification } = useNotifications();
+
+  const notifySaveFailed = (what: string) =>
+    pushNotification('저장 실패', `${what}이(가) 서버에 반영되지 않았어요. 다시 시도해 주세요.`);
 
   useEffect(() => {
     (async () => {
@@ -125,45 +134,78 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   }, [rooms, loaded]);
 
   const renameRoom = (id: string, label: string) => {
-    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, label } : r)));
-    api.renameRoom(Number(id), label).catch((err) => console.warn('방 이름 변경 실패:', err));
+    const prev = rooms;
+    setRooms((p) => p.map((r) => (r.id === id ? { ...r, label } : r)));
+    rollbackOnFailure(api.renameRoom(Number(id), label), prev, setRooms, '방 이름 변경', () =>
+      notifySaveFailed('방 이름 변경')
+    );
   };
 
-  // 새 기기를 지정한 방의 기기 목록에 등록한다. 실제 ESP32가 없으니 mock-register로 하드웨어의
-  // register 호출을 흉내낸 뒤, 곧바로 이 방(room_id)에 배정한다.
-  const addDevice = (roomId: string, deviceName: string) => {
+  // 근처에서 통신 중이던 스마트 플러그(이미 부팅되어 서버에 자기소개는 마쳤지만 아직 방에 안 묶인
+  // 실기기)를 연결한다. 이름은 일단 기기가 등록 시 보낸 기본 라벨을 그대로 쓰고, 화면에 카드로 나타난
+  // 뒤 사용자가 그 카드를 눌러 renameDevice로 원하는 이름을 붙인다.
+  // 기본 라벨은 relay_node 등이 다 같은 값("거실 기기 제어" 등)을 보내는 경우가 흔해서, 이 방에 이미
+  // 같은 이름의 기기가 있으면 뒤에 기기 id 일부를 붙여 방 안에서 이름이 겹치지 않게 한다 - 아래
+  // toggleDeviceMode 등 여러 함수가 기기를 이름으로 찾기 때문에, 이름이 겹치면 엉뚱한 기기가 반응한다.
+  const connectDevice = (roomId: string, deviceId: string) => {
     (async () => {
       try {
-        const created = await api.mockRegisterDevice(deviceName);
-        await api.updateDevice(created.id, { room_id: Number(roomId) });
+        const updated = await api.updateDevice(deviceId, { room_id: Number(roomId) });
+        const baseName = updated.label ?? updated.id;
+        const room = roomsRef.current.find((r) => r.id === roomId);
+        const nameTaken = room?.devices.some((d) => d.name === baseName) ?? false;
+        const name = nameTaken ? `${baseName} (${deviceId.slice(-4)})` : baseName;
+
         setRooms((prev) =>
           prev.map((r) =>
             r.id !== roomId
               ? r
-              : { ...r, devices: [...r.devices, { id: created.id, name: deviceName, on: false, mode: 'auto', onSince: null }] }
+              : {
+                  ...r,
+                  devices: [
+                    ...r.devices,
+                    { id: updated.id, name, on: updated.state === 'on', mode: 'auto', onSince: null, type: updated.type },
+                  ],
+                }
           )
         );
       } catch (err) {
-        console.warn('기기 추가 실패:', err);
+        console.warn('스마트 플러그 연결 실패:', err);
+        notifySaveFailed('스마트 플러그 연결');
       }
     })();
   };
 
+  // 연결된 스마트 플러그(기기) 카드를 눌러 사용자가 직접 붙인 이름으로 바꾼다.
+  const renameDevice = (roomId: string, deviceId: string, name: string) => {
+    const prev = rooms;
+    setRooms((p) =>
+      p.map((r) =>
+        r.id !== roomId ? r : { ...r, devices: r.devices.map((d) => (d.id === deviceId ? { ...d, name } : d)) }
+      )
+    );
+    rollbackOnFailure(api.updateDevice(deviceId, { name }), prev, setRooms, '기기 이름 변경', () =>
+      notifySaveFailed('기기 이름 변경')
+    );
+  };
+
   // 방의 기기 목록에서 기기 하나를 제거한다. 기기 자체를 지우는 API는 없으므로(하드웨어는 여전히
   // 존재), room_id를 null로 만들어 "이 방에서 제거"만 표현한다.
-  const deleteDevice = (roomId: string, deviceName: string) => {
-    const device = roomsRef.current.find((r) => r.id === roomId)?.devices.find((d) => d.name === deviceName);
-    setRooms((prev) =>
-      prev.map((r) => (r.id !== roomId ? r : { ...r, devices: r.devices.filter((d) => d.name !== deviceName) }))
+  // id로 찾는다 - 이름으로 찾으면 사용자가 두 기기에 같은 이름을 붙였을 때 엉뚱한 기기가 지워질 수 있다.
+  const deleteDevice = (roomId: string, deviceId: string) => {
+    const prev = rooms;
+    setRooms((p) =>
+      p.map((r) => (r.id !== roomId ? r : { ...r, devices: r.devices.filter((d) => d.id !== deviceId) }))
     );
-    if (device) {
-      api.updateDevice(device.id, { room_id: null }).catch((err) => console.warn('기기 제거 실패:', err));
-    }
+    rollbackOnFailure(api.updateDevice(deviceId, { room_id: null }), prev, setRooms, '기기 제거', () =>
+      notifySaveFailed('기기 제거')
+    );
   };
 
   // 기기 하나의 자동/수동 모드를 토글한다. 수동으로 바뀌면 그때부터 on 값은 센서가 아니라
   // 사용자가 아래 toggleDevicePower로 직접 정한다. (모드는 백엔드에 없는 프런트 전용 값)
-  const toggleDeviceMode = (roomId: string, deviceName: string) => {
+  // id로 찾는다 - 이유는 deleteDevice와 동일(이름 중복 시 오작동 방지).
+  const toggleDeviceMode = (roomId: string, deviceId: string) => {
     setRooms((prev) =>
       prev.map((r) =>
         r.id !== roomId
@@ -171,7 +213,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
           : {
               ...r,
               devices: r.devices.map((d) =>
-                d.name === deviceName ? { ...d, mode: d.mode === 'auto' ? 'manual' : 'auto' } : d
+                d.id === deviceId ? { ...d, mode: d.mode === 'auto' ? 'manual' : 'auto' } : d
               ),
             }
       )
@@ -180,34 +222,38 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
 
   // 수동 모드 기기의 ON/OFF를 직접 뒤집는다(자동 모드일 때는 배지가 눌리지 않으므로 호출되지 않음).
   // 켜질 때 onSince를 기록하고, 꺼지면 지운다 - 화재 예방 시스템이 "얼마나 오래 켜져 있었는지" 재는 기준.
-  // 실제 릴레이 제어 API(/devices/{id}/control)도 함께 호출한다.
-  const toggleDevicePower = (roomId: string, deviceName: string) => {
-    const device = roomsRef.current.find((r) => r.id === roomId)?.devices.find((d) => d.name === deviceName);
+  // 실제 릴레이 제어 API(/devices/{id}/control)도 함께 호출한다. id로 찾는다 - 이유는 위와 동일.
+  const toggleDevicePower = (roomId: string, deviceId: string) => {
+    const device = roomsRef.current.find((r) => r.id === roomId)?.devices.find((d) => d.id === deviceId);
     if (!device) return;
     const nextOn = !device.on;
+    const prev = rooms;
 
-    setRooms((prev) =>
-      prev.map((r) =>
+    setRooms((p) =>
+      p.map((r) =>
         r.id !== roomId
           ? r
           : {
               ...r,
               devices: r.devices.map((d) =>
-                d.name === deviceName ? { ...d, on: nextOn, onSince: nextOn ? Date.now() : null } : d
+                d.id === deviceId ? { ...d, on: nextOn, onSince: nextOn ? Date.now() : null } : d
               ),
             }
       )
     );
-    api.controlDevice(device.id, nextOn ? 'on' : 'off').catch((err) => console.warn('기기 전원 제어 실패:', err));
+    rollbackOnFailure(api.controlDevice(device.id, nextOn ? 'on' : 'off'), prev, setRooms, '기기 전원 제어', () =>
+      notifySaveFailed('기기 전원 제어')
+    );
   };
 
   // 자동화 규칙(AutomationContext)이 외출/외박/루틴 일정에 맞춰 기기를 명시적으로 켜고 끌 때 쓴다.
   // toggleDevicePower와 달리 on 값을 직접 지정하고, mode는 건드리지 않는다(기존 자동/수동 의미 유지).
   const setDevicePower = (roomId: string, deviceName: string, on: boolean) => {
     const device = roomsRef.current.find((r) => r.id === roomId)?.devices.find((d) => d.name === deviceName);
+    const prev = rooms;
 
-    setRooms((prev) =>
-      prev.map((r) =>
+    setRooms((p) =>
+      p.map((r) =>
         r.id !== roomId
           ? r
           : {
@@ -219,7 +265,9 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       )
     );
     if (device) {
-      api.controlDevice(device.id, on ? 'on' : 'off').catch((err) => console.warn('기기 전원 제어 실패:', err));
+      rollbackOnFailure(api.controlDevice(device.id, on ? 'on' : 'off'), prev, setRooms, '기기 전원 제어', () =>
+        notifySaveFailed('기기 전원 제어')
+      );
     }
   };
 
@@ -228,9 +276,10 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   // 꺼졌다는 걸 방 설정 화면에서도 알 수 있게 한다.
   const forceOffDevice = (roomId: string, deviceName: string) => {
     const device = roomsRef.current.find((r) => r.id === roomId)?.devices.find((d) => d.name === deviceName);
+    const prev = rooms;
 
-    setRooms((prev) =>
-      prev.map((r) =>
+    setRooms((p) =>
+      p.map((r) =>
         r.id !== roomId
           ? r
           : {
@@ -242,7 +291,9 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       )
     );
     if (device) {
-      api.controlDevice(device.id, 'off').catch((err) => console.warn('기기 강제 차단 실패:', err));
+      rollbackOnFailure(api.controlDevice(device.id, 'off'), prev, setRooms, '기기 강제 차단', () =>
+        notifySaveFailed('기기 강제 차단')
+      );
     }
   };
 
@@ -250,6 +301,9 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   // 한 번에 차단한다(어떤 기기가 원인인지 특정할 수 없는 센서 기반 감지에 쓴다).
   const forceOffRoom = (roomId: string) => {
     const targetDevices = roomsRef.current.find((r) => r.id === roomId)?.devices ?? [];
+    // 기기별로 서버 호출이 독립적으로 실패할 수 있으므로, 방 전체를 통째로 롤백하는 대신
+    // 실패한 기기만 원래 on 값으로 되돌린다(다른 기기는 성공한 대로 off 유지).
+    const prevOnByDeviceId = new Map(targetDevices.map((d) => [d.id, d.on]));
 
     setRooms((prev) =>
       prev.map((r) =>
@@ -259,7 +313,22 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       )
     );
     targetDevices.forEach((d) => {
-      api.controlDevice(d.id, 'off').catch((err) => console.warn('기기 강제 차단 실패:', err));
+      api.controlDevice(d.id, 'off').catch((err) => {
+        console.warn('기기 강제 차단 실패:', err);
+        setRooms((prev) =>
+          prev.map((r) =>
+            r.id !== roomId
+              ? r
+              : {
+                  ...r,
+                  devices: r.devices.map((dv) =>
+                    dv.id === d.id ? { ...dv, on: prevOnByDeviceId.get(d.id) ?? dv.on } : dv
+                  ),
+                }
+          )
+        );
+        notifySaveFailed(`${d.name} 강제 차단`);
+      });
     });
   };
 
@@ -274,7 +343,8 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       value={{
         rooms,
         renameRoom,
-        addDevice,
+        connectDevice,
+        renameDevice,
         deleteDevice,
         toggleDeviceMode,
         toggleDevicePower,

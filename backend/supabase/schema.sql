@@ -104,21 +104,30 @@ create index if not exists idx_automation_rules_room on automation_rules(room_id
 
 -- 취침 모드 프리셋 + 취침 감지 설정 - SleepModeScreen이 사용.
 -- app_settings와 같은 이유로(로그인/멀티유저 없는 프로토타입) 딱 한 행(id=1)만 쓰는 싱글턴.
+-- devices: 취침 모드에 포함시킬 기기를 사용자가 직접 고른 목록 - [{"device_id": "...", "on": true}, ...].
+-- 원룸마다 실제로 어떤 기기를 쓰는지 다르므로(조명/에어컨 같은 고정 종류를 미리 가정하지 않고),
+-- SmartHomeControl에 이미 등록된 기기 중에서 직접 선택하고 켜질지/꺼질지도 함께 정한다.
 create table if not exists sleep_preset (
   id int primary key default 1,
-  light_on boolean not null default false,
-  aircon_on boolean not null default true,
-  aircon_temp int not null default 22,
-  dehumidify boolean not null default true,
-  humidifier_on boolean not null default true,
-  tv_off boolean not null default true,
-  pc_off boolean not null default true,
+  devices jsonb not null default '[]',
   bedtime_hour int not null default 20 check (bedtime_hour between 0 and 23),
   no_motion_minutes int not null default 30 check (no_motion_minutes > 0),
   confirm_wait_minutes int not null default 5 check (confirm_wait_minutes > 0),
   constraint sleep_preset_singleton check (id = 1)
 );
 insert into sleep_preset (id) values (1) on conflict (id) do nothing;
+
+-- 마이그레이션: 기기 종류를 고정 가정하던 이전 버전(light_on/aircon_on/aircon_temp/dehumidify/
+-- humidifier_on/tv_off/pc_off)에서 devices(jsonb) 기반으로 바뀌기 전에 만들어진 기존 프로젝트용.
+-- 새 프로젝트에서는 위 create table로 처음부터 devices 컬럼으로 생성되므로 아래는 그냥 no-op.
+alter table sleep_preset add column if not exists devices jsonb not null default '[]';
+alter table sleep_preset drop column if exists light_on;
+alter table sleep_preset drop column if exists aircon_on;
+alter table sleep_preset drop column if exists aircon_temp;
+alter table sleep_preset drop column if exists dehumidify;
+alter table sleep_preset drop column if exists humidifier_on;
+alter table sleep_preset drop column if exists tv_off;
+alter table sleep_preset drop column if exists pc_off;
 
 -- 완료된 취침 세션 기록 - SleepStatsScreen(수면 통계)이 사용.
 -- 취침 모드가 활성화될 때 sleep_started_at만 채워 한 행이 생기고, 기상이 감지되면 같은 행에

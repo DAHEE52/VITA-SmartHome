@@ -3,13 +3,14 @@
 // 2) 로드가 끝나기 전에는 흰 화면만 보여줘서 폰트가 늦게 바뀌며 깜빡이는 현상(FOUT)을 막은 뒤
 // 3) 로드가 끝나면 RootNavigator로 실제 화면들을 렌더링한다.
 import React, { useCallback } from 'react';
-import { View } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreenModule from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 
 import RootNavigator from './src/navigation/RootNavigator';
+import { WEB_MAX_WIDTH } from './src/hooks/useAppWindowDimensions';
 import { GoalProvider } from './src/context/GoalContext';
 import { RoomsProvider } from './src/context/RoomsContext';
 import { EnergyHistoryProvider } from './src/context/EnergyHistoryContext';
@@ -21,7 +22,6 @@ import { PresenceProvider } from './src/context/PresenceContext';
 import { AutomationProvider } from './src/context/AutomationContext';
 import { SensorProvider } from './src/context/SensorContext';
 import { SleepProvider } from './src/context/SleepContext';
-import { LifePatternProvider } from './src/context/LifePatternContext';
 
 // 네이티브 스플래시(앱 아이콘 로딩 화면)가 폰트 로딩 전에 자동으로 사라지지 않도록 유지시킨다.
 SplashScreenModule.preventAutoHideAsync().catch(() => {});
@@ -47,34 +47,52 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-        <StatusBar style="dark" />
-        <GoalProvider>
-          <RoomsProvider>
-            <EnergyHistoryProvider>
-              <NotificationsProvider>
-                <CalendarProvider>
-                  <PresenceProvider>
-                    <AutomationProvider>
-                      <SensorProvider>
-                        <SleepProvider>
-                          <LifePatternProvider>
+      {/* 웹에서 노트북 등 넓은 창으로 열었을 때 앱이 브라우저 폭 전체로 늘어지지 않도록, 폰 폭(WEB_MAX_WIDTH)으로
+          가운데 정렬해 보여준다. 네이티브(폰 실기기)에서는 항상 화면 폭이 이보다 좁으므로 기존과 동일하게 꽉 채운다. */}
+      <View style={styles.webBackdrop}>
+        <View style={styles.webFrame} onLayout={onLayoutRootView}>
+          <StatusBar style="dark" />
+          {/* NotificationsProvider를 가장 바깥에 둔 이유: 저장 실패 시 되돌리고(rollback) 사용자에게
+              보이는 알림도 띄우는 낙관적 업데이트 패턴(rollbackOnFailure)을 GoalContext/RoomsContext를
+              포함한 모든 하위 Context에서 쓰려면, 그 아래(자손)에서만 useNotifications()를 호출할 수
+              있는 React Context 규칙상 Notifications가 전부를 감싸야 한다. */}
+          <NotificationsProvider>
+            <GoalProvider>
+              <RoomsProvider>
+                <EnergyHistoryProvider>
+                  <CalendarProvider>
+                    <PresenceProvider>
+                      <AutomationProvider>
+                        <SensorProvider>
+                          <SleepProvider>
                             <FireSafetyProvider>
                               <SettingsProvider>
                                 <RootNavigator />
                               </SettingsProvider>
                             </FireSafetyProvider>
-                          </LifePatternProvider>
-                        </SleepProvider>
-                      </SensorProvider>
-                    </AutomationProvider>
-                  </PresenceProvider>
-                </CalendarProvider>
-              </NotificationsProvider>
-            </EnergyHistoryProvider>
-          </RoomsProvider>
-        </GoalProvider>
+                          </SleepProvider>
+                        </SensorProvider>
+                      </AutomationProvider>
+                    </PresenceProvider>
+                  </CalendarProvider>
+                </EnergyHistoryProvider>
+              </RoomsProvider>
+            </GoalProvider>
+          </NotificationsProvider>
+        </View>
       </View>
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  webBackdrop: {
+    flex: 1,
+    ...(Platform.OS === 'web' ? { alignItems: 'center', backgroundColor: '#1c1c1e' } : null),
+  },
+  webFrame: {
+    flex: 1,
+    width: '100%',
+    ...(Platform.OS === 'web' ? { maxWidth: WEB_MAX_WIDTH } : null),
+  },
+});

@@ -8,6 +8,8 @@
 // 한 번 불러오고, 이후 변경은 로컬 state를 낙관적으로 갱신한 뒤 백엔드에도 반영한다.
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import * as api from '../api/client';
+import { useNotifications } from './NotificationsContext';
+import { rollbackOnFailure } from '../utils/optimisticUpdate';
 
 // date는 SPECIAL 항목에서만 쓰는 연/월/일 값 - DAILY는 매일(또는 특정 요일) 반복이라 날짜가 필요 없다.
 export type ScheduleDate = { year: number; month: number; day: number };
@@ -71,6 +73,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
   // 사전 등록된 예시 데이터 없이 빈 상태로 시작한다 - 항목은 전부 캘린더 화면의 + 버튼으로 추가한 것만 남는다.
   const [dailyItems, setDailyItems] = useState<ScheduleItem[]>([]);
   const [specialItems, setSpecialItems] = useState<ScheduleItem[]>([]);
+  const { pushNotification } = useNotifications();
 
   useEffect(() => {
     (async () => {
@@ -84,11 +87,19 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  const notifySaveFailed = (what: string) =>
+    pushNotification('저장 실패', `${what}이(가) 서버에 반영되지 않았어요. 다시 시도해 주세요.`);
+
+  // 추가는 서버 응답(생성된 id 포함)이 와야 목록에 넣을 수 있어 애초에 낙관적으로 먼저 반영하지
+  // 않는다 - 실패해도 되돌릴 로컬 상태가 없으므로, 사용자에게 실패했다는 사실만 알려준다.
   const addDailyItem = (item: NewScheduleItemInput) => {
     api
       .createDailyItem({ time: item.time, label: item.label, weekdays: item.weekdays })
       .then((created) => setDailyItems((prev) => [...prev, fromApi(created)]))
-      .catch((err) => console.warn('DAILY 일정 추가 실패:', err));
+      .catch((err) => {
+        console.warn('DAILY 일정 추가 실패:', err);
+        notifySaveFailed('일정 추가');
+      });
   };
 
   const addSpecialItem = (item: NewScheduleItemInput) => {
@@ -96,27 +107,58 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     api
       .createSpecialItem({ time: item.time, label: item.label, kind: item.kind, date: item.date })
       .then((created) => setSpecialItems((prev) => [...prev, fromApi(created)]))
-      .catch((err) => console.warn('SPECIAL 일정 추가 실패:', err));
+      .catch((err) => {
+        console.warn('SPECIAL 일정 추가 실패:', err);
+        notifySaveFailed('일정 추가');
+      });
   };
 
   const updateDailyItem = (id: string, patch: Partial<NewScheduleItemInput>) => {
-    setDailyItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-    api.updateScheduleItem(Number(id), toApiPatch(patch)).catch((err) => console.warn('DAILY 일정 수정 실패:', err));
+    const prev = dailyItems;
+    setDailyItems((p) => p.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    rollbackOnFailure(
+      api.updateScheduleItem(Number(id), toApiPatch(patch)),
+      prev,
+      setDailyItems,
+      'DAILY 일정 수정',
+      () => notifySaveFailed('일정 수정')
+    );
   };
 
   const updateSpecialItem = (id: string, patch: Partial<NewScheduleItemInput>) => {
-    setSpecialItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-    api.updateScheduleItem(Number(id), toApiPatch(patch)).catch((err) => console.warn('SPECIAL 일정 수정 실패:', err));
+    const prev = specialItems;
+    setSpecialItems((p) => p.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    rollbackOnFailure(
+      api.updateScheduleItem(Number(id), toApiPatch(patch)),
+      prev,
+      setSpecialItems,
+      'SPECIAL 일정 수정',
+      () => notifySaveFailed('일정 수정')
+    );
   };
 
   const removeDailyItem = (id: string) => {
-    setDailyItems((prev) => prev.filter((it) => it.id !== id));
-    api.deleteScheduleItem(Number(id)).catch((err) => console.warn('DAILY 일정 삭제 실패:', err));
+    const prev = dailyItems;
+    setDailyItems((p) => p.filter((it) => it.id !== id));
+    rollbackOnFailure(
+      api.deleteScheduleItem(Number(id)),
+      prev,
+      setDailyItems,
+      'DAILY 일정 삭제',
+      () => notifySaveFailed('일정 삭제')
+    );
   };
 
   const removeSpecialItem = (id: string) => {
-    setSpecialItems((prev) => prev.filter((it) => it.id !== id));
-    api.deleteScheduleItem(Number(id)).catch((err) => console.warn('SPECIAL 일정 삭제 실패:', err));
+    const prev = specialItems;
+    setSpecialItems((p) => p.filter((it) => it.id !== id));
+    rollbackOnFailure(
+      api.deleteScheduleItem(Number(id)),
+      prev,
+      setSpecialItems,
+      'SPECIAL 일정 삭제',
+      () => notifySaveFailed('일정 삭제')
+    );
   };
 
   return (

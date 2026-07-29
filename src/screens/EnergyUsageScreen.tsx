@@ -8,7 +8,7 @@
 // 조명), 소비전력 상위 5개 종류만 보여준 뒤 나머지는 "기타"로 합산한다(summarizeDeviceUsage,
 // RoomsContext의 로컬 방/기기 목록 기준 - 방/기기 관리는 아직 백엔드에 연동되지 않았다).
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,6 +18,7 @@ import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import { useRooms } from '../context/RoomsContext';
+import { useAppWindowDimensions } from '../hooks/useAppWindowDimensions';
 import { summarizeDeviceUsage } from '../utils/energy';
 import { calcChange, SeriesPoint } from '../utils/energySeries';
 import { getEnergyUsage, EnergyUsage } from '../api/client';
@@ -39,6 +40,24 @@ function aggregateTotalSeries(usage: EnergyUsage): SeriesPoint[] {
   return order.map((label) => ({ label, value: totals.get(label)! }));
 }
 
+// "월" 탭 비교 전용 - period='month' 응답은 일별(x_label "MM/DD")로 쪼개져 있어서, 그대로 마지막
+// 두 점을 비교하면 "어제 대비 오늘"이 되어버린다("전월 대비"라는 라벨과 안 맞음). 그래서 여기서
+// x_label의 "MM" 부분만 뽑아 월 단위로 다시 합산한 뒤, 실제로 지난달 합계와 비교되도록 만든다.
+function aggregateByMonth(dailySeries: SeriesPoint[]): SeriesPoint[] {
+  const order: string[] = [];
+  const totals = new Map<string, number>();
+  for (const p of dailySeries) {
+    const month = p.label.split('/')[0];
+    if (!month) continue;
+    if (!totals.has(month)) {
+      order.push(month);
+      totals.set(month, 0);
+    }
+    totals.set(month, totals.get(month)! + p.value);
+  }
+  return order.map((month) => ({ label: `${month}월`, value: totals.get(month)! }));
+}
+
 const SCREEN_PADDING = 20;
 // 스크롤 없이 화면 높이 안에 다 들어와야 하므로, MainScreen과 같은 방식으로
 // 화면이 작은 기기에서는 차트/카드 크기를 함께 줄이는 scale 값을 쓴다.
@@ -52,7 +71,9 @@ const POINT_COUNT: Record<Period, number> = { year: 5, month: 5, day: 7 };
 const CARD_LABEL: Record<Period, string> = {
   year: '전년 대비 사용량',
   month: '전월 대비 사용량',
-  day: '전일 대비 사용량',
+  // "일" 탭은 x_label이 "HH시"뿐이라 날짜 구분이 없어 진짜 전일(어제) 합계를 구할 수 없다.
+  // 실제로 비교하는 건 그래프의 마지막 두 시간대 값이므로 라벨도 그에 맞춘다.
+  day: '직전 시간 대비 사용량',
 };
 
 const PERIOD_TABS: { key: Period; label: string; bg: string }[] = [
@@ -128,7 +149,7 @@ function TopStatCard({
 // 실제 누적 사용량(kWh)을 보여주는 단일 라인 차트.
 // 데이터가 최대 7개 지점뿐이라 별도 차트 라이브러리 없이 react-native-svg로 직접 그린다.
 function UsageLineChart({ scale, series }: { scale: number; series: SeriesPoint[] }) {
-  const { width: winWidth } = useWindowDimensions();
+  const { width: winWidth } = useAppWindowDimensions();
   const chartWidth = winWidth - SCREEN_PADDING * 2;
   const leftAxisWidth = 40; // y축 kWh 라벨이 들어갈 좌측 여백
   const rightMargin = 20; // 마지막 지점의 원/숫자 라벨이 SVG 오른쪽 끝에서 잘리지 않도록 남겨두는 여백
@@ -141,8 +162,12 @@ function UsageLineChart({ scale, series }: { scale: number; series: SeriesPoint[
   const chartHeight = topMargin + plotHeight + bottomAxisSpace;
 
   const values = series.map((p) => p.value);
-  // 아직 쌓인 데이터가 거의 없어도(0.0x kWh) 눈에 보이는 비율로 그려지도록 아주 작은 최솟값만 바닥으로 둔다.
-  const maxValue = Math.max(0.01, ...values);
+  // 실사용량이 하나라도 있으면(0.0x kWh처럼 작아도) 눈에 보이는 비율로 그려지도록 아주 작은
+  // 최솟값(0.01)만 바닥으로 둔다. 반면 전부 0이면(아직 기기 사용 이력이 전혀 없는 첫 화면) 그
+  // 0.01을 기준으로 5등분한 y축 눈금이 전부 "0.00"/"0.01"로 뭉쳐 보이므로, 이 경우엔 보기 좋은
+  // 정수 스케일(1kWh)로 대체해 0/0.25/0.5/0.75/1.0처럼 구분되는 눈금을 보여준다.
+  const hasAnyUsage = values.some((v) => v > 0);
+  const maxValue = hasAnyUsage ? Math.max(0.01, ...values) : 1;
 
   const xAt = (i: number) => (series.length <= 1 ? 0 : (plotWidth / (series.length - 1)) * i);
   const yAt = (v: number) => topMargin + plotHeight - (v / maxValue) * plotHeight;
@@ -242,7 +267,7 @@ function DeviceUsageRow({ type, watt, count, scale }: { type: string; watt: numb
 }
 
 export default function EnergyUsageScreen() {
-  const { height } = useWindowDimensions();
+  const { height } = useAppWindowDimensions();
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
   const [period, setPeriod] = useState<Period>('year');
   const [usage, setUsage] = useState<EnergyUsage>({ series: [], year_over_year_pct: null });
@@ -258,8 +283,11 @@ export default function EnergyUsageScreen() {
     }, [period])
   );
 
-  const series = aggregateTotalSeries(usage).slice(-POINT_COUNT[period]);
-  const { percent, direction } = calcChange(series);
+  const fullSeries = aggregateTotalSeries(usage);
+  const series = fullSeries.slice(-POINT_COUNT[period]);
+  // 차트는 항상 "최근 N개 구간"을 보여주지만, 증감률 카드는 "월" 탭에서만 월 단위로 다시 합산한
+  // 시리즈를 써서 실제 전월 대비가 되도록 한다(그 외 탭은 기존처럼 마지막 두 점을 비교).
+  const { percent, direction } = calcChange(period === 'month' ? aggregateByMonth(fullSeries) : series);
 
   // 방이 달라도 기기 종류가 같으면 하나로 묶고, 소비전력이 큰 상위 5개만 남긴 뒤 나머지는 "기타"로 합산한다.
   const deviceUsage = summarizeDeviceUsage(rooms);

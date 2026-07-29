@@ -1,24 +1,37 @@
-// 릴레이(기기 on/off 제어) 노드.
-// FastAPI의 "대기 명령" 엔드포인트를 2~3초마다 폴링해서 릴레이를 켜고 끈다.
-// (기기가 서버에 먼저 연결을 여는 pull 방식이라 NAT/포트포워딩 없이도 동작함)
+// 전력 측정 + 원격 제어 통합 노드: PZEM-004T v3(AC 전압/전류/전력/누적 전력량) + 릴레이 1채널.
+// 콘센트 하나(스마트플러그 형태)로 "이 기기가 지금 몇 W를 쓰는지"와 "이 기기를 켜고 끄기"를
+// device_id 하나로 동시에 처리한다 - power_monitor_node + relay_node를 한 보드에 합친 것.
 //
-// 필요 라이브러리: ArduinoJson (v7)
+// 등록 시 type을 "power_monitor"로 보낸다. 백엔드의 /devices/{id}/control과 /commands/pending은
+// type을 보지 않고 device_id 기준으로만 동작하므로, 이 type으로도 릴레이 제어에는 문제가 없고
+// 대신 에너지 사용량 화면(kWh 꺾은선 그래프)의 집계 대상(GET /energy/usage)에 포함된다.
 //
-// 배선 주의: 릴레이 코일측은 보통 별도 5V가 필요하고, XIAO의 5V 핀은 USB 급전 시에만
-// 살아있다(배터리 구동 전환 시 주의). 옵토릴레이 보드의 극성(active-high/low)은
+// 필요 라이브러리 (Arduino Library Manager): "PZEM004Tv30" (Jakub Mandula / mandulaj), "ArduinoJson"(v7)
+//
+// !!! 안전 경고 !!!
+// PZEM-004T는 AC 전원선(220V/110V)에 직결된다. 반드시 절연 인클로저 안에서 작업하고
+// line/load 방향을 데이터시트대로 확인한 뒤 통전할 것. 통전 상태에서 배선 만지지 않기.
+// 릴레이 코일측은 보통 별도 5V가 필요하고, 옵토릴레이 보드의 극성(active-high/low)은
 // config.h의 RELAY_ACTIVE_LEVEL로 반드시 실측 확인 후 설정할 것.
 
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
+#include <PZEM004Tv30.h>
 
 #include "config.h"
 
 static const int RELAY_PIN = D1;
-static const unsigned long POLL_INTERVAL_MS = 2500;
+static const unsigned long READING_PUSH_INTERVAL_MS = 30000;
+static const unsigned long COMMAND_POLL_INTERVAL_MS = 2500;
 
-unsigned long lastPollMs = 0;
+// PZEM은 반드시 별도 HardwareSerial 사용 (Serial은 USB 디버그 전용).
+HardwareSerial pzemSerial(1);
+PZEM004Tv30 pzem(pzemSerial, /*RX*/ D7, /*TX*/ D6);
+
+unsigned long lastReadingPushMs = 0;
+unsigned long lastCommandPollMs = 0;
 
 // 백엔드가 AWS Lambda Function URL(HTTPS 전용)로 배포되어 있어 TLS 클라이언트가 필요하다.
 // 서버 인증서를 별도로 검증하지 않는다(setInsecure) - X-Device-Key 헤더로 기기를 인증하는
@@ -55,15 +68,45 @@ int postJson(const String &path, JsonDocument &doc) {
 void registerDevice() {
   JsonDocument doc;
   doc["device_id"] = DEVICE_ID;
-  doc["type"] = "relay";
+  doc["type"] = "power_monitor";
   doc["room"] = ROOM;
-  doc["label"] = ROOM " 기기 제어";
+  doc["label"] = ROOM " 기기";
   // setup()에서 이미 릴레이를 강제로 꺼둔 뒤 이 함수가 불리므로, 부팅/재부팅 시 실제 물리
   // 상태(off)를 함께 알려서 DB가 정전 전 상태(예: "on")로 낡아있지 않게 동기화한다.
   doc["state"] = "off";
 
   int status = postJson("/devices/register", doc);
   Serial.print("등록 응답 코드: ");
+  Serial.println(status);
+}
+
+// PZEM은 결선이 안 됐거나 읽기 실패 시 NAN을 반환하므로, 값이 있을 때만 배열에 추가한다.
+void addIfValid(JsonArray &readings, const char *metric, float value) {
+  if (isnan(value)) {
+    return;
+  }
+  JsonObject r = readings.add<JsonObject>();
+  r["metric"] = metric;
+  r["value"] = value;
+}
+
+void pushReadings() {
+  JsonDocument doc;
+  JsonArray readings = doc["readings"].to<JsonArray>();
+
+  addIfValid(readings, "voltage", pzem.voltage());
+  addIfValid(readings, "current", pzem.current());
+  addIfValid(readings, "power_w", pzem.power());
+  // energy()는 카운터 리셋 이후 누적 kWh. /energy/usage가 이 값을 구간별로 차분해서 사용량을 계산한다.
+  addIfValid(readings, "energy_kwh", pzem.energy());
+
+  if (readings.size() == 0) {
+    Serial.println("PZEM 값을 읽지 못함 (배선/전원 확인 필요) - 이번 주기는 전송 생략");
+    return;
+  }
+
+  int status = postJson(String("/devices/") + DEVICE_ID + "/readings", doc);
+  Serial.print("readings 응답 코드: ");
   Serial.println(status);
 }
 
@@ -128,9 +171,14 @@ void loop() {
     return;
   }
 
-  if (millis() - lastPollMs >= POLL_INTERVAL_MS) {
+  if (millis() - lastCommandPollMs >= COMMAND_POLL_INTERVAL_MS) {
     pollPendingCommands();
-    lastPollMs = millis();
+    lastCommandPollMs = millis();
+  }
+
+  if (millis() - lastReadingPushMs >= READING_PUSH_INTERVAL_MS) {
+    pushReadings();
+    lastReadingPushMs = millis();
   }
 
   delay(100);

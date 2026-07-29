@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
@@ -57,6 +58,11 @@ class _QueryBuilder:
         self._filters.append(("in", col, vals))
         return self
 
+    def is_(self, col, val):
+        # supabase-py의 is_(col, "null")만 라우터에서 쓰므로 그 경우만 지원한다.
+        self._filters.append(("eq", col, None if val == "null" else val))
+        return self
+
     def order(self, col, desc=False):
         self._order = (col, desc)
         return self
@@ -92,6 +98,11 @@ class _QueryBuilder:
                 if row.get("id") is None:
                     existing_ids = [r["id"] for r in rows if isinstance(r.get("id"), int)]
                     row["id"] = max(existing_ids, default=0) + 1
+                # 실제 스키마의 `default now()` 컬럼들을 흉내낸다 - 라우터가 값을 안 넣고 insert하면
+                # DB가 채워주는 걸 그대로 재현해야 order("recorded_at"/"created_at") 쿼리가 동작함.
+                for ts_col in ("recorded_at", "created_at"):
+                    if ts_col not in row:
+                        row[ts_col] = datetime.now(timezone.utc).isoformat()
                 rows.append(row)
                 created.append(dict(row))
             return _Result(created)

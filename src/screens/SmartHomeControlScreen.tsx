@@ -1,7 +1,10 @@
 // 시안 4 - 스마트홈 제어 화면.
-// 구조: 활성화된 기기 수 카드 / 방(Room) 카드 2열 그리드(마지막 칸은 기기 추가 버튼, 스크롤 가능) / 하단 네비(홈)
-// VITA는 원룸 전용 서비스라 방은 항상 정확히 하나만 존재한다(RoomsContext가 자동 보장) -
-// 그래서 이 화면엔 방을 추가/삭제하는 UI가 없고, 그리드 끝의 "+" 버튼은 바로 그 방에 기기를 추가한다.
+// 구조: 활성화된 기기 수 카드 / 목표 온도 카드 / 스마트 플러그(기기) 카드 2열 그리드(마지막 칸은
+// 스마트 플러그 연결 버튼, 스크롤 가능) / 하단 네비(홈)
+// VITA는 원룸 전용 서비스라 방은 항상 정확히 하나만 존재한다(RoomsContext가 자동 보장) - 그래서
+// 이 화면엔 방을 추가/삭제하는 UI가 없고, 그리드는 방이 아니라 그 방에 연결된 기기(스마트 플러그)를
+// 카드로 보여준다. "+" 버튼을 누르면 근처에서 통신 중인 스마트 플러그 목록이 뜨고, 연결하면 카드로
+// 나타난다. 카드를 누르면 이름을 직접 지정할 수 있고, 전력 측정기(power_monitor)면 실시간 W도 보인다.
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -11,7 +14,6 @@ import {
   Pressable,
   TextInput,
   ScrollView,
-  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -19,14 +21,22 @@ import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import AnimatedPressable from '../components/AnimatedPressable';
-import { PlusIcon, CloseIcon } from '../components/icons';
-import { useRooms, Room } from '../context/RoomsContext';
+import { PlusIcon } from '../components/icons';
+import { useRooms, Room, Device } from '../context/RoomsContext';
+import { useAppWindowDimensions } from '../hooks/useAppWindowDimensions';
+import * as api from '../api/client';
 
 // 화면이 작은 기기에서는 카드 padding/폰트 크기를 함께 줄이는 scale 값을 쓴다.
 const REFERENCE_HEIGHT = 820;
 const MIN_SCALE = 0.7;
 const SCREEN_PADDING = 20;
 const GRID_GAP = 14;
+// 목표 온도 조절 범위 - 냉/난방기 목표 설정치로 흔히 쓰이는 범위 정도로 제한한다.
+const MIN_TARGET_TEMP = 16;
+const MAX_TARGET_TEMP = 30;
+// 전력 측정기(power_monitor) 카드의 실시간 W를 이 주기로 다시 조회한다. 실기기(power_relay_node
+// 등)가 30초마다 값을 push하므로 그보다 촘촘히 조회해봐야 새 값이 없다.
+const WATT_POLL_INTERVAL_MS = 20000;
 
 // 현재 켜져있는 기기 대수를 보여주는 상단 카드
 function ActiveDevicesCard({ scale, count }: { scale: number; count: number }) {
@@ -38,233 +48,349 @@ function ActiveDevicesCard({ scale, count }: { scale: number; count: number }) {
   );
 }
 
-// 방 하나를 나타내는 회색 박스 카드.
-// 좌상단에 켜져있는 기기가 하나라도 있으면 초록 점 하나만 표시한다(개수와 무관하게 항상 1개 - 몇 대가
-// 켜져 있는지가 아니라 "이 방에 켜진 기기가 있는지"만 보여주기 위함). 0개면 점 없음.
-// 별도의 설정 버튼 없이 카드(회색 박스) 자체를 누르면 그 방의 설정 창이 열린다.
-function RoomCard({
-  label,
-  onCount,
+// 방의 목표 온도를 조절하는 카드. 자동화 규칙(외출/외박/루틴)이 이 값을 자동으로 바꾸기도 한다.
+function TargetTempCard({
+  room,
+  scale,
+  onSetTargetTemp,
+}: {
+  room: Room | null;
+  scale: number;
+  onSetTargetTemp: (roomId: string, temp: number) => void;
+}) {
+  if (!room) return null;
+  return (
+    <Card style={[styles.tempCard, { paddingVertical: 16 * scale, paddingHorizontal: 20 * scale }]}>
+      <Text style={[styles.tempLabel, { fontSize: 14 * scale }]}>목표 온도</Text>
+      <View style={styles.tempStepperRow}>
+        <AnimatedPressable
+          style={styles.tempStepButton}
+          onPress={() => onSetTargetTemp(room.id, Math.max(MIN_TARGET_TEMP, room.targetTemp - 1))}
+          activeOpacity={0.7}
+          hitSlop={8}
+        >
+          <Text style={styles.tempStepText}>−</Text>
+        </AnimatedPressable>
+        <Text style={styles.tempValue}>{room.targetTemp}°C</Text>
+        <AnimatedPressable
+          style={styles.tempStepButton}
+          onPress={() => onSetTargetTemp(room.id, Math.min(MAX_TARGET_TEMP, room.targetTemp + 1))}
+          activeOpacity={0.7}
+          hitSlop={8}
+        >
+          <Text style={styles.tempStepText}>＋</Text>
+        </AnimatedPressable>
+      </View>
+    </Card>
+  );
+}
+
+// 연결된 스마트 플러그(기기) 하나를 나타내는 회색 박스 카드.
+// 켜져 있으면 좌상단에 초록 점, 전력 측정기(power_monitor)면 실시간 소비전력(W)도 함께 보여준다.
+// 카드를 누르면 그 기기의 설정(이름 변경/전원/연결 해제) 창이 열린다.
+function DeviceCard({
+  device,
   scale,
   cellSize,
-  onOpenSettings,
+  onPress,
 }: {
-  label: string;
-  onCount: number;
+  device: Device;
   scale: number;
   cellSize: number;
-  onOpenSettings: () => void;
+  onPress: () => void;
 }) {
+  const [watt, setWatt] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (device.type !== 'power_monitor') {
+      setWatt(null);
+      return;
+    }
+    let cancelled = false;
+    const fetchLatest = () => {
+      api
+        .getLatestPower(device.id)
+        .then((r) => {
+          if (!cancelled) setWatt(r.power_w);
+        })
+        .catch(() => {});
+    };
+    fetchLatest();
+    const interval = setInterval(fetchLatest, WATT_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [device.id, device.type]);
+
   return (
     <AnimatedPressable
       style={[styles.gridCell, styles.roomCard, { width: cellSize, height: cellSize }]}
-      onPress={onOpenSettings}
+      onPress={onPress}
       activeOpacity={0.8}
-      accessibilityLabel={`${label} 방 설정`}
+      accessibilityLabel={`${device.name} 설정`}
     >
-      {onCount > 0 && <View style={styles.activeDot} />}
-      <Text style={[styles.roomLabel, { fontSize: 20 * scale }]}>{label}</Text>
+      {device.on && <View style={styles.activeDot} />}
+      <Text style={[styles.roomLabel, { fontSize: 18 * scale }]} numberOfLines={2}>
+        {device.name}
+      </Text>
+      {watt !== null && (
+        <Text style={[styles.deviceWattText, { fontSize: 12 * scale }]}>{Math.round(watt)}W</Text>
+      )}
     </AnimatedPressable>
   );
 }
 
-// 방 카드(회색 박스)를 누르면 뜨는 방 설정 창 - 이름 수정 + 기기 ON/OFF 현황(자동/수동) + 방 삭제.
-// 기기별로 평소엔 "자동"(센서가 읽은 값을 그대로 표시, 직접 못 누름)이고, "수동"으로 바꾸면
-// 센서 고장 등으로 값을 믿을 수 없을 때 ON/OFF 배지를 직접 눌러 바꿀 수 있다.
-// 목표 온도 조절 범위 - 냉/난방기 목표 설정치로 흔히 쓰이는 범위 정도로 제한한다.
-const MIN_TARGET_TEMP = 16;
-const MAX_TARGET_TEMP = 30;
+// 연결된 스마트 플러그(회색 박스) 대신 마지막 칸에 뜨는 원형 "+" 버튼. 근처 스마트 플러그 목록을 연다.
+function AddDeviceButton({ scale, cellSize, onPress }: { scale: number; cellSize: number; onPress: () => void }) {
+  const size = 56 * scale;
+  return (
+    <View style={[styles.gridCell, { width: cellSize, height: cellSize }]}>
+      <AnimatedPressable
+        style={[styles.addCircle, { width: size, height: size, borderRadius: size / 2 }]}
+        activeOpacity={0.7}
+        onPress={onPress}
+        accessibilityLabel="스마트 플러그 연결"
+      >
+        <PlusIcon size={24 * scale} />
+      </AnimatedPressable>
+    </View>
+  );
+}
 
-function RoomSettingsModal({
-  room,
+// "+" 버튼을 누르면 뜨는 창 - 근처에서 통신 중인(이미 서버에 자기소개를 마쳤지만 아직 방에 안 묶인)
+// 스마트 플러그 목록을 보여주고, 각 항목의 "연결" 버튼을 누르면 그 자리에서 연결된다. 이름은 여기서
+// 정하지 않고, 연결 후 화면에 나타난 카드를 눌러서 따로 정한다.
+function ConnectDeviceModal({
+  visible,
+  roomId,
   onClose,
-  onRename,
-  onToggleDeviceMode,
-  onToggleDevicePower,
-  onDeleteDevice,
-  onAddDevice,
-  onSetTargetTemp,
+  onConnect,
 }: {
-  room: Room | null;
+  visible: boolean;
+  roomId: string | null;
   onClose: () => void;
-  onRename: (id: string, label: string) => void;
-  onToggleDeviceMode: (roomId: string, deviceName: string) => void;
-  onToggleDevicePower: (roomId: string, deviceName: string) => void;
-  onDeleteDevice: (roomId: string, deviceName: string) => void;
-  onAddDevice: (roomId: string) => void;
-  onSetTargetTemp: (roomId: string, temp: number) => void;
+  onConnect: (roomId: string, deviceId: string) => void;
 }) {
-  const [nameInput, setNameInput] = useState('');
-  const [confirmDeleteDevice, setConfirmDeleteDevice] = useState<string | null>(null);
+  const [nearby, setNearby] = useState<api.DeviceOut[]>([]);
+  const [connectedIds, setConnectedIds] = useState<Set<string>>(new Set());
 
-  // room.id로만 의존성을 걸어서, 같은 방을 계속 보고 있는 동안(온도 변경 등으로 room 객체
-  // 참조만 바뀌는 경우) 사용자가 입력 중인(아직 저장 안 한) 이름이 지워지지 않게 한다.
-  // room 전체를 의존성으로 두면 온도 변경/기기 목록 변경 때마다 room 참조가 바뀌어 이 effect가
-  // 다시 돌면서 아직 "저장"을 누르지 않은 nameInput을 서버 값으로 되돌려버리는 문제가 있었다.
   useEffect(() => {
-    if (room) {
-      setNameInput(room.label);
-      setConfirmDeleteDevice(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room?.id]);
+    if (!visible) return;
+    setConnectedIds(new Set());
+    api
+      .getUnassignedDevices()
+      .then(setNearby)
+      .catch((err) => {
+        console.warn('근처 스마트 플러그 조회 실패:', err);
+        setNearby([]);
+      });
+  }, [visible]);
 
-  const handleSave = () => {
-    if (room && nameInput.trim()) {
-      onRename(room.id, nameInput.trim());
-    }
-    onClose();
-  };
-
-  // 기기 추가 창으로 넘어가면 방 설정 창이 잠깐 닫혔다 다시 열리는데(같은 room.id로), 그 사이
-  // 아직 저장하지 않은 이름 변경이 있으면 먼저 커밋해서 되돌아왔을 때 사라지지 않게 한다.
-  const commitPendingRename = () => {
-    if (room && nameInput.trim() && nameInput.trim() !== room.label) {
-      onRename(room.id, nameInput.trim());
-    }
-  };
-
-  const handleConfirmDeleteDevice = () => {
-    if (room && confirmDeleteDevice) onDeleteDevice(room.id, confirmDeleteDevice);
-    setConfirmDeleteDevice(null);
+  const handleConnect = (device: api.DeviceOut) => {
+    if (!roomId || connectedIds.has(device.id)) return;
+    onConnect(roomId, device.id);
+    setConnectedIds((prev) => new Set(prev).add(device.id));
   };
 
   return (
-    <Modal visible={!!room} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => {}}>
-          {confirmDeleteDevice ? (
+          <Text style={styles.modalTitle}>스마트 플러그 연결</Text>
+          <Text style={styles.deviceSectionHint}>
+            {nearby.length > 0
+              ? '통신 중인 스마트 플러그예요. 연결할 기기를 골라주세요.'
+              : '근처에서 통신 중인 스마트 플러그가 없어요. 전원을 확인해 주세요.'}
+          </Text>
+
+          <ScrollView style={styles.nearbyList}>
+            {nearby.map((d) => {
+              const connected = connectedIds.has(d.id);
+              return (
+                <View key={d.id} style={styles.nearbyRow}>
+                  <Text style={styles.nearbyLabel} numberOfLines={1}>
+                    {d.label ?? d.id}
+                  </Text>
+                  <AnimatedPressable
+                    style={[styles.connectButton, connected && styles.connectButtonDone]}
+                    onPress={() => handleConnect(d)}
+                    activeOpacity={0.7}
+                    disabled={connected}
+                  >
+                    <Text style={[styles.connectButtonText, connected && styles.connectButtonTextDone]}>
+                      {connected ? '연결됨' : '연결'}
+                    </Text>
+                  </AnimatedPressable>
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          <AnimatedPressable
+            style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
+            onPress={onClose}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.modalCloseText}>닫기</Text>
+          </AnimatedPressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// 스마트 플러그 카드를 누르면 뜨는 창 - 이름 변경, 실시간 소비전력(측정기인 경우), 자동/수동 전원
+// 제어, 연결 해제를 한 곳에서 처리한다.
+function DeviceSettingsModal({
+  device,
+  roomId,
+  onClose,
+  onRename,
+  onToggleMode,
+  onTogglePower,
+  onDisconnect,
+}: {
+  device: Device | null;
+  roomId: string | null;
+  onClose: () => void;
+  onRename: (roomId: string, deviceId: string, name: string) => void;
+  onToggleMode: (roomId: string, deviceId: string) => void;
+  onTogglePower: (roomId: string, deviceId: string) => void;
+  onDisconnect: (roomId: string, deviceId: string) => void;
+}) {
+  const [nameInput, setNameInput] = useState('');
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [watt, setWatt] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (device) {
+      setNameInput(device.name);
+      setConfirmDisconnect(false);
+    }
+  }, [device?.id]);
+
+  useEffect(() => {
+    if (!device || device.type !== 'power_monitor') {
+      setWatt(null);
+      return;
+    }
+    let cancelled = false;
+    const fetchLatest = () => {
+      api
+        .getLatestPower(device.id)
+        .then((r) => {
+          if (!cancelled) setWatt(r.power_w);
+        })
+        .catch(() => {});
+    };
+    fetchLatest();
+    const interval = setInterval(fetchLatest, WATT_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [device?.id, device?.type]);
+
+  const handleSaveName = () => {
+    if (roomId && device && nameInput.trim() && nameInput.trim() !== device.name) {
+      onRename(roomId, device.id, nameInput.trim());
+    }
+  };
+
+  const handleDisconnect = () => {
+    if (roomId && device) onDisconnect(roomId, device.id);
+    setConfirmDisconnect(false);
+    onClose();
+  };
+
+  return (
+    <Modal visible={!!device} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          {confirmDisconnect ? (
             <>
-              <Text style={styles.modalTitle}>{confirmDeleteDevice} 기기를 삭제할까요?</Text>
-              <Text style={styles.confirmSubtitle}>삭제하면 되돌릴 수 없어요.</Text>
+              <Text style={styles.modalTitle}>{device?.name} 연결을 해제할까요?</Text>
+              <Text style={styles.confirmSubtitle}>다시 연결하려면 스마트 플러그 연결에서 새로 골라야 해요.</Text>
               <View style={styles.modalBottomRow}>
                 <AnimatedPressable
                   style={styles.modalCloseButton}
-                  onPress={() => setConfirmDeleteDevice(null)}
+                  onPress={() => setConfirmDisconnect(false)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.modalCloseText}>취소</Text>
                 </AnimatedPressable>
-                <AnimatedPressable
-                  style={styles.deleteButton}
-                  onPress={handleConfirmDeleteDevice}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.deleteButtonText}>삭제</Text>
+                <AnimatedPressable style={styles.deleteButton} onPress={handleDisconnect} activeOpacity={0.7}>
+                  <Text style={styles.deleteButtonText}>해제</Text>
                 </AnimatedPressable>
               </View>
             </>
           ) : (
             <>
-              <Text style={styles.modalTitle}>방 설정</Text>
+              <Text style={styles.modalTitle}>기기 설정</Text>
 
               <View style={styles.renameRow}>
                 <TextInput
                   style={styles.renameInput}
                   value={nameInput}
                   onChangeText={setNameInput}
-                  onSubmitEditing={handleSave}
-                  placeholder="방 이름"
+                  onSubmitEditing={handleSaveName}
+                  onBlur={handleSaveName}
+                  placeholder="기기 이름"
                   placeholderTextColor={colors.textGray}
                   returnKeyType="done"
+                  autoFocus
                 />
-                <AnimatedPressable style={styles.renameSaveButton} onPress={handleSave} activeOpacity={0.7}>
+                <AnimatedPressable style={styles.renameSaveButton} onPress={handleSaveName} activeOpacity={0.7}>
                   <Text style={styles.renameSaveText}>저장</Text>
                 </AnimatedPressable>
               </View>
 
-              <View style={styles.tempRow}>
-                <Text style={styles.tempLabel}>목표 온도</Text>
-                <View style={styles.tempStepperRow}>
+              {watt !== null && (
+                <Text style={styles.deviceSectionHint}>실시간 소비전력: {Math.round(watt)}W</Text>
+              )}
+
+              <View style={styles.deviceRow}>
+                <Text style={styles.deviceName}>전원</Text>
+                <View style={styles.deviceControls}>
                   <AnimatedPressable
-                    style={styles.tempStepButton}
-                    onPress={() =>
-                      room && onSetTargetTemp(room.id, Math.max(MIN_TARGET_TEMP, room.targetTemp - 1))
-                    }
+                    style={[styles.modeToggle, device?.mode === 'manual' && styles.modeToggleManual]}
+                    onPress={() => roomId && device && onToggleMode(roomId, device.id)}
                     activeOpacity={0.7}
-                    hitSlop={8}
                   >
-                    <Text style={styles.tempStepText}>−</Text>
+                    <Text
+                      style={[styles.modeToggleText, device?.mode === 'manual' && styles.modeToggleTextManual]}
+                    >
+                      {device?.mode === 'auto' ? '자동' : '수동'}
+                    </Text>
                   </AnimatedPressable>
-                  <Text style={styles.tempValue}>{room?.targetTemp ?? 24}°C</Text>
-                  <AnimatedPressable
-                    style={styles.tempStepButton}
-                    onPress={() =>
-                      room && onSetTargetTemp(room.id, Math.min(MAX_TARGET_TEMP, room.targetTemp + 1))
-                    }
-                    activeOpacity={0.7}
-                    hitSlop={8}
-                  >
-                    <Text style={styles.tempStepText}>＋</Text>
-                  </AnimatedPressable>
+
+                  {device?.mode === 'manual' ? (
+                    <AnimatedPressable
+                      style={[styles.statusBadge, device?.on ? styles.statusOn : styles.statusOff]}
+                      onPress={() => roomId && device && onTogglePower(roomId, device.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.statusText, device?.on ? styles.statusTextOn : styles.statusTextOff]}>
+                        {device?.on ? 'ON' : 'OFF'}
+                      </Text>
+                    </AnimatedPressable>
+                  ) : (
+                    <View style={[styles.statusBadge, device?.on ? styles.statusOn : styles.statusOff]}>
+                      <Text style={[styles.statusText, device?.on ? styles.statusTextOn : styles.statusTextOff]}>
+                        {device?.on ? 'ON' : 'OFF'}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
-              <Text style={styles.deviceSectionHint}>
-                평소엔 센서가 자동으로 전원 상태를 확인해요. 센서 오류 등으로 값이 다르면
-                "수동"으로 바꿔 직접 켜고 끌 수 있어요.
-              </Text>
-
-              {room?.devices.map((d) => (
-                <View key={d.name} style={styles.deviceRow}>
-                  <Text style={styles.deviceName}>{d.name}</Text>
-                  <View style={styles.deviceControls}>
-                    <AnimatedPressable
-                      style={[styles.modeToggle, d.mode === 'manual' && styles.modeToggleManual]}
-                      onPress={() => room && onToggleDeviceMode(room.id, d.name)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.modeToggleText,
-                          d.mode === 'manual' && styles.modeToggleTextManual,
-                        ]}
-                      >
-                        {d.mode === 'auto' ? '자동' : '수동'}
-                      </Text>
-                    </AnimatedPressable>
-
-                    {d.mode === 'manual' ? (
-                      <AnimatedPressable
-                        style={[styles.statusBadge, d.on ? styles.statusOn : styles.statusOff]}
-                        onPress={() => room && onToggleDevicePower(room.id, d.name)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.statusText, d.on ? styles.statusTextOn : styles.statusTextOff]}>
-                          {d.on ? 'ON' : 'OFF'}
-                        </Text>
-                      </AnimatedPressable>
-                    ) : (
-                      <View style={[styles.statusBadge, d.on ? styles.statusOn : styles.statusOff]}>
-                        <Text style={[styles.statusText, d.on ? styles.statusTextOn : styles.statusTextOff]}>
-                          {d.on ? 'ON' : 'OFF'}
-                        </Text>
-                      </View>
-                    )}
-
-                    <AnimatedPressable
-                      style={styles.deviceDeleteButton}
-                      onPress={() => setConfirmDeleteDevice(d.name)}
-                      hitSlop={8}
-                      activeOpacity={0.7}
-                      accessibilityLabel={`${d.name} 기기 삭제`}
-                    >
-                      <CloseIcon size={14} color={colors.textGray} />
-                    </AnimatedPressable>
-                  </View>
-                </View>
-              ))}
-
               <AnimatedPressable
-                style={styles.addDeviceInModalButton}
-                onPress={() => {
-                  if (!room) return;
-                  commitPendingRename();
-                  onAddDevice(room.id);
-                }}
+                style={styles.disconnectButton}
+                onPress={() => setConfirmDisconnect(true)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.addDeviceInModalText}>기기 추가</Text>
+                <Text style={styles.disconnectButtonText}>연결 해제</Text>
               </AnimatedPressable>
 
               <AnimatedPressable
@@ -282,175 +408,59 @@ function RoomSettingsModal({
   );
 }
 
-// 기기를 추가하는 원형 "+" 버튼. 다른 방 카드와 달리 배경 카드 없이 원만 떠 있음.
-// 원룸 전용이라 방은 항상 하나뿐이므로, 이 버튼은 방 선택 없이 곧바로 그 방에 기기를 추가한다.
-function AddDeviceButton({ scale, cellSize, onPress }: { scale: number; cellSize: number; onPress: () => void }) {
-  const size = 56 * scale;
-  return (
-    <View style={[styles.gridCell, { width: cellSize, height: cellSize }]}>
-      <AnimatedPressable
-        style={[styles.addCircle, { width: size, height: size, borderRadius: size / 2 }]}
-        activeOpacity={0.7}
-        onPress={onPress}
-        accessibilityLabel="기기 추가"
-      >
-        <PlusIcon size={24 * scale} />
-      </AnimatedPressable>
-    </View>
-  );
-}
-
-// 방 카드의 "+" 버튼을 누르면 뜨는 창 - 그 방(room)에 등록할 기기 이름만 입력하면 되고,
-// 등록하면 바로 그 방의 기기 목록에 추가되어 방 설정 창에서 확인할 수 있다.
-function AddDeviceModal({
-  room,
-  onClose,
-  onSubmit,
-}: {
-  room: Room | null;
-  onClose: () => void;
-  onSubmit: (roomId: string, deviceName: string) => void;
-}) {
-  const [deviceName, setDeviceName] = useState('');
-
-  useEffect(() => {
-    if (room) setDeviceName('');
-  }, [room]);
-
-  const handleSubmit = () => {
-    if (!room || !deviceName.trim()) return;
-    onSubmit(room.id, deviceName.trim());
-    onClose();
-  };
-
-  return (
-    <Modal visible={!!room} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={() => {}}>
-          <Text style={styles.modalTitle}>{room?.label}에 기기 추가</Text>
-
-          <View style={styles.renameRow}>
-            <TextInput
-              style={styles.renameInput}
-              value={deviceName}
-              onChangeText={setDeviceName}
-              onSubmitEditing={handleSubmit}
-              placeholder="기기 이름"
-              placeholderTextColor={colors.textGray}
-              returnKeyType="done"
-              autoFocus
-            />
-          </View>
-
-          <View style={styles.modalBottomRow}>
-            <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
-              <Text style={styles.modalCloseText}>취소</Text>
-            </AnimatedPressable>
-            <AnimatedPressable style={styles.renameSaveButtonWide} onPress={handleSubmit} activeOpacity={0.7}>
-              <Text style={styles.renameSaveText}>등록</Text>
-            </AnimatedPressable>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
 export default function SmartHomeControlScreen() {
-  const { height, width } = useWindowDimensions();
+  const { height, width } = useAppWindowDimensions();
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
   // 정확히 정사각형이 되도록 %/aspectRatio 대신 실제 픽셀 크기를 계산해서 쓴다.
   const cellSize = (width - SCREEN_PADDING * 2 - GRID_GAP) / 2;
-  const {
-    rooms,
-    renameRoom,
-    addDevice,
-    deleteDevice,
-    toggleDeviceMode,
-    toggleDevicePower,
-    setRoomTargetTemp,
-  } = useRooms();
-  const [settingsRoomId, setSettingsRoomId] = useState<string | null>(null);
-  const [addDeviceRoomId, setAddDeviceRoomId] = useState<string | null>(null);
-  // 기기 추가 창이 방 설정 창을 거쳐 열렸는지(닫을 때 설정 창으로 되돌아가야 함), 그리드의 "+"
-  // 버튼으로 곧장 열렸는지(닫을 때 그냥 닫히면 됨) 구분한다.
-  const [addDeviceFromSettings, setAddDeviceFromSettings] = useState(false);
+  const { rooms, connectDevice, renameDevice, deleteDevice, toggleDeviceMode, toggleDevicePower, setRoomTargetTemp } =
+    useRooms();
+  const room = rooms[0] ?? null;
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [settingsDeviceId, setSettingsDeviceId] = useState<string | null>(null);
 
-  const activeCount = rooms.reduce(
-    (sum, r) => sum + r.devices.filter((d) => d.on).length,
-    0
-  );
-  const settingsRoom = rooms.find((r) => r.id === settingsRoomId) ?? null;
-  const addDeviceRoom = rooms.find((r) => r.id === addDeviceRoomId) ?? null;
-
-  // 방 설정 창의 "기기 추가"를 누르면 호출된다. RN의 Modal은 두 개가 동시에 visible:true면
-  // (설정 창 + 기기 추가 창) 터치가 먹통이 되는 문제가 있어서, 기기 추가 창을 열기 전에
-  // 반드시 설정 창부터 닫는다 - 두 Modal이 함께 열려 있는 상태를 만들지 않기 위함.
-  const openAddDeviceFromSettings = (roomId: string) => {
-    setSettingsRoomId(null);
-    setAddDeviceRoomId(roomId);
-    setAddDeviceFromSettings(true);
-  };
-
-  // 그리드 끝의 "+" 버튼을 누르면 호출된다. 원룸 전용이라 방 선택 없이 그 방(rooms[0])에
-  // 바로 기기 추가 창을 연다.
-  const openAddDeviceFromGrid = (roomId: string) => {
-    setAddDeviceRoomId(roomId);
-    setAddDeviceFromSettings(false);
-  };
-
-  // 기기 추가 창을 닫을 때(취소/등록 모두), 방 설정 창을 거쳐 온 경우에만 그 설정 창으로 되돌아간다.
-  const closeAddDeviceModal = () => {
-    const roomId = addDeviceRoomId;
-    const cameFromSettings = addDeviceFromSettings;
-    setAddDeviceRoomId(null);
-    if (roomId && cameFromSettings) setSettingsRoomId(roomId);
-  };
+  const activeCount = rooms.reduce((sum, r) => sum + r.devices.filter((d) => d.on).length, 0);
+  const settingsDevice = room?.devices.find((d) => d.id === settingsDeviceId) ?? null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={[styles.content, { paddingTop: 20 * scale }]}>
         <ActiveDevicesCard scale={scale} count={activeCount} />
+        <View style={{ height: 12 * scale }} />
+        <TargetTempCard room={room} scale={scale} onSetTargetTemp={setRoomTargetTemp} />
         <View style={{ height: 16 * scale }} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 * scale }}>
           <View style={[styles.grid, { rowGap: GRID_GAP }]}>
-            {rooms.map((room) => (
-              <RoomCard
-                key={room.id}
-                label={room.label}
-                onCount={room.devices.filter((d) => d.on).length}
+            {room?.devices.map((device) => (
+              <DeviceCard
+                key={device.id}
+                device={device}
                 scale={scale}
                 cellSize={cellSize}
-                onOpenSettings={() => setSettingsRoomId(room.id)}
+                onPress={() => setSettingsDeviceId(device.id)}
               />
             ))}
-            {rooms[0] && (
-              <AddDeviceButton
-                scale={scale}
-                cellSize={cellSize}
-                onPress={() => openAddDeviceFromGrid(rooms[0].id)}
-              />
-            )}
+            {room && <AddDeviceButton scale={scale} cellSize={cellSize} onPress={() => setConnectModalOpen(true)} />}
           </View>
         </ScrollView>
       </View>
       <View style={styles.bottomNavWrap}>
         <BottomNav variant="sub" />
       </View>
-      <RoomSettingsModal
-        room={settingsRoom}
-        onClose={() => setSettingsRoomId(null)}
-        onRename={renameRoom}
-        onToggleDeviceMode={toggleDeviceMode}
-        onToggleDevicePower={toggleDevicePower}
-        onDeleteDevice={deleteDevice}
-        onAddDevice={openAddDeviceFromSettings}
-        onSetTargetTemp={setRoomTargetTemp}
+      <DeviceSettingsModal
+        device={settingsDevice}
+        roomId={room?.id ?? null}
+        onClose={() => setSettingsDeviceId(null)}
+        onRename={renameDevice}
+        onToggleMode={toggleDeviceMode}
+        onTogglePower={toggleDevicePower}
+        onDisconnect={deleteDevice}
       />
-      <AddDeviceModal
-        room={addDeviceRoom}
-        onClose={closeAddDeviceModal}
-        onSubmit={addDevice}
+      <ConnectDeviceModal
+        visible={connectModalOpen}
+        roomId={room?.id ?? null}
+        onClose={() => setConnectModalOpen(false)}
+        onConnect={connectDevice}
       />
     </SafeAreaView>
   );
@@ -478,6 +488,12 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
 
+  tempCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -492,7 +508,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: 20,
   },
-  // 켜진 기기가 있는 방 카드 좌상단에 표시하는 점 하나. 개수 상관없이 항상 이 점 하나만 쓴다.
+  // 켜진 기기 카드 좌상단에 표시하는 점.
   activeDot: {
     position: 'absolute',
     top: 18,
@@ -505,6 +521,13 @@ const styles = StyleSheet.create({
   roomLabel: {
     fontFamily: fonts.jalnan,
     color: colors.text,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+  deviceWattText: {
+    fontFamily: fonts.jalnan,
+    color: colors.textGray2,
+    marginTop: 6,
   },
   addCircle: {
     backgroundColor: colors.card,
@@ -539,6 +562,42 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     textAlign: 'center',
   },
+  nearbyList: {
+    maxHeight: 260,
+    marginBottom: 14,
+  },
+  nearbyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 10,
+  },
+  nearbyLabel: {
+    flex: 1,
+    fontFamily: fonts.jalnan,
+    fontSize: 14,
+    color: colors.text,
+  },
+  connectButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: colors.orange,
+  },
+  connectButtonDone: {
+    backgroundColor: colors.card,
+  },
+  connectButtonText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 12,
+    color: colors.white,
+  },
+  connectButtonTextDone: {
+    color: colors.textGray,
+  },
   renameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -561,23 +620,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: colors.orange,
   },
-  renameSaveButtonWide: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: colors.orange,
-  },
   renameSaveText: {
     fontFamily: fonts.jalnan,
     fontSize: 14,
     color: colors.white,
-  },
-  tempRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
   },
   tempLabel: {
     fontFamily: fonts.jalnan,
@@ -593,7 +639,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.card,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -633,11 +679,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  deviceDeleteButton: {
-    padding: 4,
-  },
-  // 방 설정 창의 기기 목록 아래에 놓이는 "기기 추가" 버튼 - 이 방에 바로 기기를 등록하는 창을 연다.
-  addDeviceInModalButton: {
+  disconnectButton: {
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 14,
@@ -645,10 +687,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.card,
   },
-  addDeviceInModalText: {
+  disconnectButtonText: {
     fontFamily: fonts.jalnan,
     fontSize: 14,
-    color: colors.textGray2,
+    color: colors.red,
   },
   // 기기별 자동/수동 전환 pill. 수동일 때만 강조색으로 바꿔서, 지금 "센서 대신 내가 직접
   // 정한 값"이라는 걸 한눈에 알아볼 수 있게 한다.

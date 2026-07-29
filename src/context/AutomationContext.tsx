@@ -15,6 +15,7 @@ import { useCalendar, ScheduleItem } from './CalendarContext';
 import { useRooms } from './RoomsContext';
 import { useNotifications } from './NotificationsContext';
 import { usePresence } from './PresenceContext';
+import { rollbackOnFailure } from '../utils/optimisticUpdate';
 
 const CHECK_INTERVAL_MS = 20000; // 20초마다 모든 규칙의 발동 여부를 검사한다.
 
@@ -259,6 +260,9 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  const notifySaveFailed = (what: string) =>
+    pushNotification('저장 실패', `${what}이(가) 서버에 반영되지 않았어요. 다시 시도해 주세요.`);
+
   const addRule = (input: NewRuleInput) => {
     api
       .createAutomationRule({
@@ -269,27 +273,43 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
         enabled: true,
       })
       .then((created) => setRules((prev) => [...prev, fromApiRule(created)]))
-      .catch((err) => console.warn('자동화 규칙 추가 실패:', err));
+      .catch((err) => {
+        console.warn('자동화 규칙 추가 실패:', err);
+        notifySaveFailed('자동화 규칙 추가');
+      });
   };
 
   const updateRule = (id: string, patch: Partial<NewRuleInput>) => {
-    setRules((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-    api
-      .updateAutomationRule(Number(id), toApiRulePatch(patch))
-      .catch((err) => console.warn('자동화 규칙 수정 실패:', err));
+    const prev = rules;
+    setRules((p) => p.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    rollbackOnFailure(
+      api.updateAutomationRule(Number(id), toApiRulePatch(patch)),
+      prev,
+      setRules,
+      '자동화 규칙 수정',
+      () => notifySaveFailed('자동화 규칙 수정')
+    );
   };
 
   const deleteRule = (id: string) => {
-    setRules((prev) => prev.filter((r) => r.id !== id));
-    api.deleteAutomationRule(Number(id)).catch((err) => console.warn('자동화 규칙 삭제 실패:', err));
+    const prev = rules;
+    setRules((p) => p.filter((r) => r.id !== id));
+    rollbackOnFailure(api.deleteAutomationRule(Number(id)), prev, setRules, '자동화 규칙 삭제', () =>
+      notifySaveFailed('자동화 규칙 삭제')
+    );
   };
 
   const toggleRuleEnabled = (id: string) => {
-    setRules((prev) => prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
+    const prev = rules;
+    setRules((p) => p.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
     const nextEnabled = !rulesRef.current.find((r) => r.id === id)?.enabled;
-    api
-      .updateAutomationRule(Number(id), { enabled: nextEnabled })
-      .catch((err) => console.warn('자동화 규칙 활성화 상태 변경 실패:', err));
+    rollbackOnFailure(
+      api.updateAutomationRule(Number(id), { enabled: nextEnabled }),
+      prev,
+      setRules,
+      '자동화 규칙 활성화 상태 변경',
+      () => notifySaveFailed('자동화 규칙 상태 변경')
+    );
   };
 
   return (

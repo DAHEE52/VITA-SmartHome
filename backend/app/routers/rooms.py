@@ -171,6 +171,36 @@ def delete_room(room_id: int):
     return {"ok": True}
 
 
+@router.get("/devices/unassigned", response_model=list[DeviceOut])
+def get_unassigned_devices():
+    """room_id가 없는 기기 목록 - 실제 ESP32가 부팅 시 /devices/register로 자기소개는 마쳤지만
+    아직 앱에서 방에 배정되지 않은 상태. 앱의 "기기 추가"가 여기서 골라 PATCH로 배정한다."""
+    supabase = get_supabase()
+    res = supabase.table("devices").select("id, label, type, state, room_id").is_("room_id", "null").execute()
+    return [
+        DeviceOut(id=d["id"], label=d["label"], type=d["type"], state=d["state"], room_id=d["room_id"])
+        for d in res.data
+    ]
+
+
+@router.get("/devices/{device_id}/latest")
+def get_latest_power(device_id: str):
+    """이 기기의 가장 최근 순간 소비전력(W) - power_monitor_node가 push한 값이 없으면 null."""
+    supabase = get_supabase()
+    res = (
+        supabase.table("sensor_readings")
+        .select("value, recorded_at")
+        .eq("device_id", device_id)
+        .eq("metric", "power_w")
+        .order("recorded_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        return {"power_w": None, "recorded_at": None}
+    return {"power_w": res.data[0]["value"], "recorded_at": res.data[0]["recorded_at"]}
+
+
 @router.patch("/devices/{device_id}", response_model=DeviceOut)
 def update_device(device_id: str, body: DeviceUpdate):
     supabase = get_supabase()
@@ -196,6 +226,25 @@ def update_device(device_id: str, body: DeviceUpdate):
         row = res.data[0]
 
     return DeviceOut(id=row["id"], label=row["label"], type=row["type"], state=row["state"], room_id=row["room_id"])
+
+
+@router.delete("/devices/{device_id}")
+def delete_device(device_id: str):
+    """기기를 완전히 삭제한다("연결 해제"와 다름 - 그건 room_id만 null로 되돌려 기기 row는 남긴다).
+    시연용 예시/mock 기기를 정리하는 용도 - 실제 기기는 다시 켜지면 /devices/register로 스스로
+    재등록되므로, 삭제해도 하드웨어 쪽에는 영향이 없다."""
+    supabase = get_supabase()
+    existing = supabase.table("devices").select("id").eq("id", device_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    # FK 제약 때문에 이 기기를 참조하는 하위 기록부터 지워야 devices 행을 지울 수 있다.
+    supabase.table("sensor_readings").delete().eq("device_id", device_id).execute()
+    supabase.table("device_commands").delete().eq("device_id", device_id).execute()
+    supabase.table("classification_events").delete().eq("device_id", device_id).execute()
+    supabase.table("devices").delete().eq("id", device_id).execute()
+
+    return {"ok": True}
 
 
 @router.post("/devices/mock-register", response_model=DeviceOut, status_code=201)
