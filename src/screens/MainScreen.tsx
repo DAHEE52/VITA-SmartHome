@@ -14,11 +14,11 @@ import {
   Pressable,
   TextInput,
   ScrollView,
-  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AnimatedPressable from '../components/AnimatedPressable';
+import { useAppWindowDimensions } from '../hooks/useAppWindowDimensions';
 
 import { getHomeSummary, HomeSummary } from '../api/client';
 
@@ -41,13 +41,13 @@ import {
   ChartUpIcon,
   TreeIcon,
 } from '../components/icons';
-import { useGoal, HouseholdSize } from '../context/GoalContext';
+import { useGoal } from '../context/GoalContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { useEnergyHistory } from '../context/EnergyHistoryContext';
 import { useSleep } from '../context/SleepContext';
 import { useRooms } from '../context/RoomsContext';
 import { usePresence } from '../context/PresenceContext';
-import { calcBill } from '../utils/energy';
+import { monthAchievementRate, daysInMonthOf } from '../utils/goalProgress';
 import MenuModal from '../components/MenuModal';
 import NotificationsModal from '../components/NotificationsModal';
 
@@ -96,6 +96,9 @@ function formatTime(date: Date) {
   return `${hours}:${minutes}`;
 }
 
+// CalendarScreen의 요일 헤더(SUN~SAT)와 동일한 표기를 쓴다.
+const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THR', 'FRI', 'SAT'] as const;
+
 // 요일 + 현재 시각 카드. 시간 숫자만 7세그먼트 디지털시계 폰트(DSEG7)를 써서 디지털 시계 느낌을 낸다.
 // 요일은 카드 좌측에, 시간은 카드 안에서 가운데 정렬되도록 구성.
 // 시간은 실제 기기 시각을 표시하고, 분이 바뀔 수 있으니 10초마다 다시 읽어서 갱신한다.
@@ -109,7 +112,7 @@ function TimeCard({ scale }: { scale: number }) {
 
   return (
     <Card style={[styles.timeCard, { padding: 14 * scale }]}>
-      <Text style={[styles.dayLabel, { fontSize: 20 * scale }]}>Wen</Text>
+      <Text style={[styles.dayLabel, { fontSize: 20 * scale }]}>{WEEKDAYS[now.getDay()]}</Text>
       <Text style={[styles.timeText, { fontSize: 68 * scale, marginTop: 2 * scale }]}>
         {formatTime(now)}
       </Text>
@@ -124,7 +127,7 @@ function StatusCard({ scale, summary }: { scale: number; summary: HomeSummary | 
   const iconWrapStyle = [styles.statusIconWrap, { height: 60 * scale, marginTop: 14 * scale }];
   const valueStyle = [styles.statusValue, { fontSize: 19 * scale, marginTop: 14 * scale }];
   const labelStyle = [styles.statusLabel, { fontSize: 16 * scale }];
-  const humidityText = summary?.humidity != null ? `${summary.humidity} %` : '-';
+  const humidityText = summary?.humidity != null ? `${summary.humidity.toFixed(1)} %` : '-';
   const temperatureText = summary?.temperature != null ? `${summary.temperature.toFixed(1)} °C` : '-';
   return (
     <Card style={[styles.statusCard, { padding: 20 * scale }]}>
@@ -155,81 +158,12 @@ function StatusCard({ scale, summary }: { scale: number; summary: HomeSummary | 
   );
 }
 
-// "한국 평균 전력 소비량"의 일반적으로 알려진 가구 인원별 월간 근사치(kWh). 실제 통계 API 연동은
-// 아니고, 절전 목표 기본값을 계산하기 위한 참고용 상수.
-const HOUSEHOLD_AVG_KWH: Record<HouseholdSize, number> = {
-  1: 200,
-  2: 250,
-  3: 300,
-  4: 350,
-  5: 400,
-};
-const HOUSEHOLD_OPTIONS: { size: HouseholdSize; label: string }[] = [
-  { size: 1, label: '1인 가구' },
-  { size: 2, label: '2인 가구' },
-  { size: 3, label: '3인 가구' },
-  { size: 4, label: '4인 가구' },
-  { size: 5, label: '5인 이상 가구' },
-];
-// 가구 인원별 평균 소비량 대비 25% 절감을 기본 목표로 삼는다.
+// "한국 평균 전력 소비량"의 1인 가구 월간 근사치(kWh). 실제 통계 API 연동은 아니고, 절전 목표
+// 기본값을 계산하기 위한 참고용 상수. VITA는 원룸 전용 서비스라 가구 인원은 항상 1인이다.
+const HOUSEHOLD_AVG_KWH_1P = 200;
+// 평균 소비량 대비 25% 절감을 기본 목표로 삼는다.
 const GOAL_REDUCTION_RATIO = 0.25;
-const defaultGoalFor = (size: HouseholdSize) =>
-  Math.round(HOUSEHOLD_AVG_KWH[size] * (1 - GOAL_REDUCTION_RATIO));
-
-// 카드를 탭하면 뜨는 가구 인원 선택 모달 - 인원에 맞는 평균 소비량의 25% 절감분을 기본 목표로 설정한다.
-function HouseholdPickerModal({
-  visible,
-  selected,
-  onClose,
-  onSelect,
-}: {
-  visible: boolean;
-  selected: HouseholdSize | null;
-  onClose: () => void;
-  onSelect: (size: HouseholdSize) => void;
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={() => {}}>
-          <Text style={styles.modalTitle}>가구 인원 선택</Text>
-          <Text style={styles.modalSubtitle}>
-            한국 평균 전력 소비량 대비 25% 절감을 기본 목표로 설정해요.
-          </Text>
-          <View style={styles.householdList}>
-            {HOUSEHOLD_OPTIONS.map(({ size, label }) => {
-              const isSelected = size === selected;
-              return (
-                <AnimatedPressable
-                  key={size}
-                  style={[styles.householdRow, isSelected && styles.householdRowSelected]}
-                  onPress={() => onSelect(size)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[styles.householdRowLabel, isSelected && styles.householdRowTextSelected]}
-                  >
-                    {label}
-                  </Text>
-                  <Text style={[styles.householdRowSub, isSelected && styles.householdRowTextSelected]}>
-                    목표 {defaultGoalFor(size)}kWh/월
-                  </Text>
-                </AnimatedPressable>
-              );
-            })}
-          </View>
-          <AnimatedPressable
-            style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.modalCloseText}>닫기</Text>
-          </AnimatedPressable>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
+const DEFAULT_GOAL_KWH = Math.round(HOUSEHOLD_AVG_KWH_1P * (1 - GOAL_REDUCTION_RATIO));
 
 // "수정" 버튼을 누르면 뜨는 모달 - 가구 인원 기준값과 무관하게 목표를 자유로운 숫자로 바꿀 수 있다.
 // "초기화" 버튼은 값을 다른 숫자로 되돌리는 게 아니라 절전 목표 자체를 완전히 삭제한다 - 삭제 후엔
@@ -301,21 +235,39 @@ function GoalEditModal({
 // 카드를 탭하면 가구 인원 선택 모달이 열려 기본 목표(kWh)를 계산해주고, "수정" 버튼으로는
 // 그 값을 무시하고 자유롭게 원하는 숫자로 바꿀 수 있다.
 function GoalCard({ scale }: { scale: number }) {
-  const progress = 0; // 절전 목표 달성률(%). 이번 달 시작 시점이라 0%부터 시작하고, 실제 앱에서는 서버 데이터로 교체될 값.
   // householdSize/goalKwh는 다른 화면으로 이동했다가 돌아와도 값이 유지되도록 GoalProvider(App.tsx
   // 최상단에 마운트됨)가 들고 있는 전역 값을 쓴다. 모달 열림 여부는 화면을 나가면 초기화되는 게
   // 자연스러우므로 그대로 이 컴포넌트의 지역 state로 둔다.
-  const { householdSize, goalKwh, setHouseholdSize, setGoalKwh, resetGoal } = useGoal();
-  const [pickerVisible, setPickerVisible] = useState(false);
+  const { goalKwh, setHouseholdSize, setGoalKwh, resetGoal } = useGoal();
+  const { dailyUsage } = useEnergyHistory();
   const [editVisible, setEditVisible] = useState(false);
+
+  // EnergyTreeScreen의 나무 성장률과 완전히 같은 계산(monthAchievementRate)을 써서, 이 카드의
+  // 퍼센트와 에너지 나무의 "이번 달 목표 달성률"이 항상 같은 값을 보여주도록 한다.
+  const now = new Date();
+  const year = now.getFullYear();
+  const month0 = now.getMonth();
+  const dailyTarget = goalKwh == null ? null : goalKwh / daysInMonthOf(year, month0);
+  const progress = Math.round(monthAchievementRate(dailyUsage, dailyTarget, year, month0) * 100);
+
+  // 원룸 전용 서비스라 가구 인원은 항상 1인 - 목표가 아직 없을 때 카드를 탭하면 별도로 물어보지
+  // 않고 바로 1인 가구 기본 목표(DEFAULT_GOAL_KWH)로 설정한 뒤, 원하면 곧바로 숫자를 고칠 수 있게
+  // 수정 모달을 연다.
+  const handlePress = () => {
+    if (goalKwh == null) {
+      setHouseholdSize(1);
+      setGoalKwh(DEFAULT_GOAL_KWH);
+    }
+    setEditVisible(true);
+  };
 
   return (
     <>
-      <AnimatedPressable activeOpacity={0.85} onPress={() => setPickerVisible(true)}>
+      <AnimatedPressable activeOpacity={0.85} onPress={handlePress}>
         <Card style={[styles.goalCard, { padding: 20 * scale }]}>
           <View style={styles.goalTitleRow}>
             <BoltOutlineIcon size={22 * scale} />
-            <Text style={[styles.goalTitle, { fontSize: 19 * scale }]}>오늘의 절전 목표</Text>
+            <Text style={[styles.goalTitle, { fontSize: 19 * scale }]}>이번 달 절전 목표</Text>
           </View>
           <View style={[styles.progressTrackWrap, { marginTop: 46 * scale }]}>
             <View style={styles.progressTrack}>
@@ -333,8 +285,8 @@ function GoalCard({ scale }: { scale: number }) {
           <Text style={[styles.progressPercent, { fontSize: 16 * scale, marginTop: 14 * scale }]}>
             {progress}%
           </Text>
-          {/* 목표를 아직 설정하지 않았을 땐 안내 문구 없이 카드를 탭하는 것만으로 설정 창이
-              열리게 하고, 목표가 있을 때만 이 행(kWh 표시 + 수정 버튼)을 보여준다. */}
+          {/* 목표를 아직 설정하지 않았을 땐 안내 문구 없이 카드를 탭하는 것만으로 설정되게 하고,
+              목표가 있을 때만 이 행(kWh 표시 + 수정 버튼)을 보여준다. */}
           {goalKwh != null && (
             <View style={[styles.goalMetaRow, { marginTop: 6 * scale }]}>
               <Text style={[styles.goalKwhText, { fontSize: 13 * scale }]}>목표 {goalKwh}kWh/월</Text>
@@ -346,16 +298,6 @@ function GoalCard({ scale }: { scale: number }) {
         </Card>
       </AnimatedPressable>
 
-      <HouseholdPickerModal
-        visible={pickerVisible}
-        selected={householdSize}
-        onClose={() => setPickerVisible(false)}
-        onSelect={(size) => {
-          setHouseholdSize(size);
-          setGoalKwh(defaultGoalFor(size));
-          setPickerVisible(false);
-        }}
-      />
       <GoalEditModal
         visible={editVisible}
         value={goalKwh}
@@ -364,81 +306,6 @@ function GoalCard({ scale }: { scale: number }) {
         onReset={resetGoal}
       />
     </>
-  );
-}
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0');
-}
-function todayKey(d: Date) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-function dayFractionElapsed(now: Date): number {
-  const seconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-  return Math.max(0.02, seconds / 86400);
-}
-function formatWon(n: number) {
-  return `${Math.round(n).toLocaleString('ko-KR')}원`;
-}
-
-// 실시간 절감액 카드 - 명세서 5번 항목("절감액 실시간 계산 & 표시").
-// 새 백엔드 없이 이미 있는 EnergyHistoryContext(실측 누적 kWh)와 GoalContext(가구 인원 평균 대비
-// 목표)를 조합해서 계산한다: 가구 평균(HOUSEHOLD_AVG_KWH)을 "절약 안 했을 때의 기준선"으로 삼고,
-// 지금까지 지난 시간 비율만큼의 기준 사용량보다 실제로 적게 썼으면 그 차이를 절감액으로 환산한다.
-function SavingsCard({ scale }: { scale: number }) {
-  const { householdSize, goalKwh } = useGoal();
-  const { dailyUsage } = useEnergyHistory();
-
-  if (householdSize == null || goalKwh == null) {
-    return (
-      <Card style={[styles.savingsCard, { padding: 18 * scale }]}>
-        <Text style={[styles.savingsTitle, { fontSize: 15 * scale }]}>💰 실시간 절감액</Text>
-        <Text style={[styles.savingsEmptyHint, { fontSize: 12 * scale, marginTop: 8 * scale }]}>
-          절전 목표를 설정하면 절감액을 계산해드려요.
-        </Text>
-      </Card>
-    );
-  }
-
-  const baselineMonthlyKwh = HOUSEHOLD_AVG_KWH[householdSize];
-  const baselineDailyKwh = baselineMonthlyKwh / 30;
-  const unitPrice = calcBill(baselineMonthlyKwh).total / baselineMonthlyKwh;
-
-  const now = new Date();
-  const dayFraction = dayFractionElapsed(now);
-  const todayUsageKwh = dailyUsage[todayKey(now)] ?? 0;
-  const todaySavedKwh = Math.max(0, baselineDailyKwh * dayFraction - todayUsageKwh);
-  const todaySavedWon = todaySavedKwh * unitPrice;
-
-  const monthPrefix = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-`;
-  const monthUsageKwh = Object.entries(dailyUsage)
-    .filter(([key]) => key.startsWith(monthPrefix))
-    .reduce((sum, [, v]) => sum + v, 0);
-  const daysSoFar = now.getDate() - 1 + dayFraction;
-  const monthSavedKwh = Math.max(0, baselineDailyKwh * daysSoFar - monthUsageKwh);
-  const monthSavedWon = monthSavedKwh * unitPrice;
-
-  const annualGoalSavingKwh = Math.max(0, baselineMonthlyKwh - goalKwh);
-  const annualSavedWon = annualGoalSavingKwh * unitPrice * 12;
-
-  return (
-    <Card style={[styles.savingsCard, { padding: 18 * scale }]}>
-      <Text style={[styles.savingsTitle, { fontSize: 15 * scale }]}>💰 실시간 절감액</Text>
-      <View style={[styles.savingsRow, { marginTop: 12 * scale }]}>
-        <View style={styles.savingsCol}>
-          <Text style={[styles.savingsLabel, { fontSize: 12 * scale }]}>오늘</Text>
-          <Text style={[styles.savingsValue, { fontSize: 16 * scale }]}>{formatWon(todaySavedWon)}</Text>
-        </View>
-        <View style={styles.savingsCol}>
-          <Text style={[styles.savingsLabel, { fontSize: 12 * scale }]}>이번 달</Text>
-          <Text style={[styles.savingsValue, { fontSize: 16 * scale }]}>{formatWon(monthSavedWon)}</Text>
-        </View>
-        <View style={styles.savingsCol}>
-          <Text style={[styles.savingsLabel, { fontSize: 12 * scale }]}>목표 달성 시 연간</Text>
-          <Text style={[styles.savingsValue, { fontSize: 16 * scale }]}>{formatWon(annualSavedWon)}</Text>
-        </View>
-      </View>
-    </Card>
   );
 }
 
@@ -536,7 +403,7 @@ const MENU_GAP = 4;
 // 스마트홈 제어 / 캘린더 / 에너지 사용량 / 에너지 나무로 이동하는 4개 바로가기 카드
 function MenuGrid({ scale }: { scale: number }) {
   const navigation = useNavigation<any>();
-  const { width } = useWindowDimensions();
+  const { width } = useAppWindowDimensions();
   // 정확히 정사각형이 되도록 flex 비율 대신 실제 픽셀 크기를 계산해서 쓴다.
   const cellSize = (width - 40 - MENU_GAP * 3) / 4;
   const items = [
@@ -563,7 +430,7 @@ function MenuGrid({ scale }: { scale: number }) {
 }
 
 export default function MainScreen() {
-  const { height } = useWindowDimensions();
+  const { height } = useAppWindowDimensions();
   // 화면이 REFERENCE_HEIGHT보다 작을 때만 비례해서 축소하고, MIN_SCALE 밑으로는 더 줄이지 않는다
   // (너무 작아지면 오히려 가독성이 떨어지므로 하한선을 둠).
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
@@ -594,7 +461,6 @@ export default function MainScreen() {
         <GoalCard scale={scale} />
         <SleepBanner scale={scale} />
         <AiRecommendationBanner scale={scale} />
-        <SavingsCard scale={scale} />
         <MenuGrid scale={scale} />
       </ScrollView>
       {/* bottomNavWrap은 다른 화면들(Calendar/EnergyUsage/EnergyTree/SmartHomeControl)과
@@ -680,31 +546,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.jalnan,
     color: colors.text,
   },
-  savingsCard: {},
-  savingsTitle: {
-    fontFamily: fonts.jalnan,
-    color: colors.text,
-  },
-  savingsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  savingsCol: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  savingsLabel: {
-    color: colors.textGray,
-  },
-  savingsValue: {
-    fontFamily: fonts.jalnan,
-    color: colors.orange,
-    marginTop: 4,
-  },
-  savingsEmptyHint: {
-    color: colors.textGray,
-  },
-
   aiCard: {
     backgroundColor: colors.yellow,
   },
@@ -840,35 +681,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
 
-  householdList: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  householdRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: colors.card,
-  },
-  householdRowSelected: {
-    backgroundColor: colors.orange,
-  },
-  householdRowLabel: {
-    fontFamily: fonts.jalnan,
-    fontSize: 15,
-    color: colors.text,
-  },
-  householdRowSub: {
-    fontSize: 13,
-    color: colors.textGray2,
-  },
-  householdRowTextSelected: {
-    color: colors.white,
-  },
-
   goalEditRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -912,11 +724,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     backgroundColor: colors.card,
-  },
-  // 버튼 행(취소/저장) 없이 단독으로 쓰일 때는 flex:1이 세로로 늘어나 보이므로 상쇄한다.
-  modalCloseButtonSolo: {
-    flex: 0,
-    marginTop: 16,
   },
   modalCloseText: {
     fontFamily: fonts.jalnan,

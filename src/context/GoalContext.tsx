@@ -7,6 +7,7 @@
 // 싱글턴 행 하나)에 저장된다 - 앱을 완전히 재시작해도 유지된다.
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import * as api from '../api/client';
+import { useNotifications } from './NotificationsContext';
 
 export type HouseholdSize = 1 | 2 | 3 | 4 | 5;
 
@@ -23,6 +24,9 @@ const GoalContext = createContext<GoalContextValue | null>(null);
 export function GoalProvider({ children }: { children: ReactNode }) {
   const [householdSize, setHouseholdSizeState] = useState<HouseholdSize | null>(null);
   const [goalKwh, setGoalKwhState] = useState<number | null>(null);
+  const { pushNotification } = useNotifications();
+  const notifySaveFailed = (what: string) =>
+    pushNotification('저장 실패', `${what}이(가) 서버에 반영되지 않았어요. 다시 시도해 주세요.`);
 
   useEffect(() => {
     (async () => {
@@ -37,21 +41,38 @@ export function GoalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setHouseholdSize = (size: HouseholdSize) => {
+    const prev = householdSize;
     setHouseholdSizeState(size);
-    api.updateSettings({ household_size: size }).catch((err) => console.warn('가구 인원 저장 실패:', err));
+    api.updateSettings({ household_size: size }).catch((err) => {
+      console.warn('가구 인원 저장 실패:', err);
+      setHouseholdSizeState(prev);
+      notifySaveFailed('가구 인원 저장');
+    });
   };
 
   const setGoalKwh = (kwh: number) => {
+    const prev = goalKwh;
     setGoalKwhState(kwh);
-    api.updateSettings({ goal_kwh: kwh }).catch((err) => console.warn('절전 목표(kWh) 저장 실패:', err));
+    api.updateSettings({ goal_kwh: kwh }).catch((err) => {
+      console.warn('절전 목표(kWh) 저장 실패:', err);
+      setGoalKwhState(prev);
+      notifySaveFailed('절전 목표 저장');
+    });
   };
 
   // 절전 목표를 완전히 삭제 - 가구 인원 선택 전 상태로 되돌려서, 카드를 다시 탭하면
   // 가구 인원 선택부터 새로 시작한다.
   const resetGoal = () => {
+    const prevHousehold = householdSize;
+    const prevGoal = goalKwh;
     setHouseholdSizeState(null);
     setGoalKwhState(null);
-    api.updateSettings({ household_size: null, goal_kwh: null }).catch((err) => console.warn('절전 목표 초기화 실패:', err));
+    api.updateSettings({ household_size: null, goal_kwh: null }).catch((err) => {
+      console.warn('절전 목표 초기화 실패:', err);
+      setHouseholdSizeState(prevHousehold);
+      setGoalKwhState(prevGoal);
+      notifySaveFailed('절전 목표 초기화');
+    });
   };
 
   return (

@@ -17,12 +17,22 @@ ipconfig
 
 "IPv4 주소" 값을 확인한 뒤, 아래 파일들의 IP를 전부 그 값으로 바꾼다:
 
-- [ ] `VITA/.env`의 `EXPO_PUBLIC_API_URL`
+- [ ] `VITA/.env`의 `EXPO_PUBLIC_API_URL` (Expo Go로 시연할 때)
+- [ ] `VITA/eas.json`의 `build.preview.env.EXPO_PUBLIC_API_URL` (**APK로 시연할 때** - 아래 "APK 빌드" 절 참고)
 - [ ] `VITA/firmware/env_presence_node/config.h`의 `API_BASE_URL`
 - [ ] `VITA/firmware/relay_node/config.h`의 `API_BASE_URL`
 - [ ] `VITA/firmware/power_monitor_node/config.h`의 `API_BASE_URL`
 
 (포트 `:8000`은 그대로 둔다.)
+
+### APK로 시연할 경우 - 반드시 미리 준비
+
+`EXPO_PUBLIC_API_URL`은 빌드 시점에 앱 안에 그대로 박히는 값이라(런타임에 바꿀 수 없음), **행사장 도착 후 IP를 알고 나서 그때 APK를 새로 빌드하면 클라우드 빌드(EAS Build)가 끝날 때까지 10~20분을 그 자리에서 기다려야 한다.** 가능하면 아래를 행사 전날 미리 끝내둘 것:
+
+- [ ] 행사장 네트워크를 미리 통제할 수 있으면(고정 IP 공유기, 자체 모바일 핫스팟 등) 그 IP를 미리 확정해서 `eas.json`에 반영
+- [ ] `eas build --profile preview --platform android` 실행 → 빌드 끝나면 뜨는 링크로 APK 다운로드
+- [ ] 안드로이드 기기에서 "출처를 알 수 없는 앱 설치" 허용 후 APK 설치
+- [ ] 만약 당일 IP가 예상과 다르면, `eas.json` 수정 후 위 빌드 명령을 그 자리에서 재실행 필요(시간 여유를 두고 진행)
 
 ## 2. 백엔드 실행
 

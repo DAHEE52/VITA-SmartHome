@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
-import { PlusIcon } from '../components/icons';
+import { PlusIcon, AutomationIcon } from '../components/icons';
 import { useCalendar, ScheduleItem } from '../context/CalendarContext';
 import { useRooms, Room } from '../context/RoomsContext';
 import { usePresence } from '../context/PresenceContext';
@@ -269,7 +269,9 @@ function RuleEditModal({
 
             <Text style={styles.fieldLabel}>어느 방에 적용할까요</Text>
             {rooms.length === 0 ? (
-              <Text style={styles.hintText}>스마트홈 제어에서 먼저 방을 추가해 주세요.</Text>
+              // VITA는 원룸 전용이라 방이 자동으로 하나 생성되므로 평소엔 이 분기를 안 탄다 -
+              // 방 목록을 아직 불러오는 중인 순간에만 잠깐 보이는 로딩 상태다.
+              <Text style={styles.hintText}>방 정보를 불러오는 중이에요.</Text>
             ) : (
               <View style={styles.chipRowWrap}>
                 {rooms.map((r) => (
@@ -417,7 +419,7 @@ export default function AutomationScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Text style={styles.headerIcon}>🔁</Text>
+        <AutomationIcon size={24} />
         <Text style={styles.headerTitle}>자동화 규칙</Text>
       </View>
 
@@ -504,9 +506,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SCREEN_PADDING,
     paddingTop: 10,
     paddingBottom: 8,
-  },
-  headerIcon: {
-    fontSize: 24,
   },
   headerTitle: {
     fontFamily: fonts.jalnan,

@@ -6,6 +6,8 @@
 // GoalContext와 같은 싱글턴 행)에 저장된다 - 앱을 완전히 재시작해도 유지된다.
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import * as api from '../api/client';
+import { useNotifications } from './NotificationsContext';
+import { rollbackOnFailure } from '../utils/optimisticUpdate';
 
 export type FontSizeOption = 'small' | 'medium' | 'large';
 
@@ -33,6 +35,9 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [address, setAddressState] = useState('');
   const [guidebookFontSize, setGuidebookFontSizeState] = useState<FontSizeOption>('medium');
+  const { pushNotification } = useNotifications();
+  const notifySaveFailed = (what: string) =>
+    pushNotification('저장 실패', `${what}이(가) 서버에 반영되지 않았어요. 다시 시도해 주세요.`);
 
   useEffect(() => {
     (async () => {
@@ -47,13 +52,23 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setAddress = (v: string) => {
+    const prev = address;
     setAddressState(v);
-    api.updateSettings({ address: v }).catch((err) => console.warn('주소 저장 실패:', err));
+    rollbackOnFailure(api.updateSettings({ address: v }), prev, setAddressState, '주소 저장', () =>
+      notifySaveFailed('주소 저장')
+    );
   };
 
   const setGuidebookFontSize = (v: FontSizeOption) => {
+    const prev = guidebookFontSize;
     setGuidebookFontSizeState(v);
-    api.updateSettings({ guidebook_font_size: v }).catch((err) => console.warn('글자 크기 저장 실패:', err));
+    rollbackOnFailure(
+      api.updateSettings({ guidebook_font_size: v }),
+      prev,
+      setGuidebookFontSizeState,
+      '글자 크기 저장',
+      () => notifySaveFailed('글자 크기 저장')
+    );
   };
 
   return (

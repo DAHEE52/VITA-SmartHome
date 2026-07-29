@@ -1,5 +1,6 @@
 // 대부분의 화면 하단에 공통으로 깔리는 네비게이션 바.
-// 메인화면: 사이렌(빨강) / 홈 / 북(가이드북) 3개 아이콘
+// 메인화면: 사이렌(빨강) / 북(가이드북) 2개 아이콘 - 이미 홈 화면이라 "홈" 버튼은 자기 자신으로
+// 이동하는 것뿐이라 의미가 없어서 뺐다.
 // 서브화면(스마트홈제어/에너지/캘린더/헬스케어): 홈 1개 아이콘만 중앙에 배치
 // -> variant prop으로 두 레이아웃을 한 컴포넌트에서 처리한다.
 import React from 'react';
@@ -61,18 +62,12 @@ export default function BottomNav({ variant = 'main' }: Props) {
 
   return (
     <View style={styles.mainRow}>
-      {/* 3칸을 동일한 flex:1 컬럼으로 나눠 각 아이콘을 칸 중앙에 배치.
+      {/* 2칸을 동일한 flex:1 컬럼으로 나눠 각 아이콘을 칸 중앙에 배치.
           아이콘마다 svg 원본 비율이 달라 실제 렌더 폭이 제각각이므로,
-          space-between처럼 아이콘 자체 크기에 좌우되는 정렬 대신 이 방식을 써야
-          가운데 칸(홈)이 항상 행의 정확한 가로 중앙에 온다. */}
+          space-between처럼 아이콘 자체 크기에 좌우되는 정렬 대신 이 방식을 쓴다. */}
       <View style={styles.mainCol}>
         <AnimatedPressable onPress={() => navigation.navigate('FirePrevention')} hitSlop={16}>
           <SirenIcon size={iconSize} />
-        </AnimatedPressable>
-      </View>
-      <View style={styles.mainCol}>
-        <AnimatedPressable onPress={() => navigation.navigate('Main')} hitSlop={16}>
-          <HomeIcon size={iconSize} />
         </AnimatedPressable>
       </View>
       <View style={styles.mainCol}>

@@ -42,6 +42,17 @@ function findDevices(rooms: ReturnType<typeof useRooms>['rooms'], type: string) 
   );
 }
 
+// preset.devices는 백엔드 기기 id로 저장되므로(사용자가 원룸에 실제 등록한 기기를 직접 고른 것),
+// 적용할 땐 그 id로 현재 방/기기 목록에서 실제 기기를 찾아야 한다(이름은 자유 텍스트라 기기 종류를
+// 짐작하는 대신 id로만 매칭한다).
+function findDeviceById(rooms: ReturnType<typeof useRooms>['rooms'], deviceId: string) {
+  for (const room of rooms) {
+    const device = room.devices.find((d) => d.id === deviceId);
+    if (device) return { roomId: room.id, device };
+  }
+  return null;
+}
+
 export function SleepProvider({ children }: { children: ReactNode }) {
   const { isHome } = usePresence();
   const { rooms, setDevicePower } = useRooms();
@@ -94,20 +105,23 @@ export function SleepProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const applyDeviceType = (type: string, on: boolean) => {
-    for (const { roomId, device } of findDevices(roomsRef.current, type)) {
-      setDevicePower(roomId, device.name, on);
+  // preset.devices에 등록된 기기들을 각자 지정된 on/off 상태로 맞춘다(사용자가 SleepModeScreen에서
+  // 직접 고른 기기와 목표 상태). invert=true면 그 반대로 맞춘다 - 기상 시 취침 모드가 바꿔놓은
+  // 상태를 되돌리는 용도.
+  const applySleepDevices = (invert: boolean) => {
+    const p = presetRef.current;
+    if (!p) return;
+    for (const { device_id, on } of p.devices) {
+      const found = findDeviceById(roomsRef.current, device_id);
+      if (!found) continue; // 취침 모드 설정 이후 삭제된 기기는 조용히 건너뛴다.
+      setDevicePower(found.roomId, found.device.name, invert ? !on : on);
     }
   };
 
   const activateSleepMode = () => {
     const p = presetRef.current;
     if (!p) return;
-    applyDeviceType('조명', p.light_on);
-    applyDeviceType('에어컨', p.aircon_on);
-    applyDeviceType('가습기', p.humidifier_on);
-    if (p.tv_off) applyDeviceType('TV', false);
-    if (p.pc_off) applyDeviceType('컴퓨터', false);
+    applySleepDevices(false);
 
     const now = Date.now();
     setState('active');
@@ -119,13 +133,14 @@ export function SleepProvider({ children }: { children: ReactNode }) {
         sleepRecordIdRef.current = record.id;
       })
       .catch((err) => console.warn('취침 기록 시작 실패:', err));
-    pushNotification('✅ 취침 모드 활성화됨', '좋은 밤 되세요! 🌙 조명·에어컨·가습기가 설정한 대로 조정됐어요.');
+    pushNotification(
+      '✅ 취침 모드 활성화됨',
+      p.devices.length > 0 ? '좋은 밤 되세요! 🌙 설정한 기기들이 지정한 상태로 조정됐어요.' : '좋은 밤 되세요! 🌙'
+    );
   };
 
   const wakeUp = () => {
-    applyDeviceType('조명', true);
-    applyDeviceType('에어컨', false);
-    applyDeviceType('가습기', false);
+    applySleepDevices(true);
 
     const startedAt = sleepStartedAtRef.current;
     const recordId = sleepRecordIdRef.current;
@@ -211,8 +226,13 @@ export function SleepProvider({ children }: { children: ReactNode }) {
   const dismiss = () => {};
 
   const setPreset = (patch: Partial<api.SleepPreset>) => {
-    setPresetState((prev) => (prev ? { ...prev, ...patch } : prev));
-    api.updateSleepPreset(patch).catch((err) => console.warn('취침 프리셋 저장 실패:', err));
+    const prev = preset;
+    setPresetState((p) => (p ? { ...p, ...patch } : p));
+    api.updateSleepPreset(patch).catch((err) => {
+      console.warn('취침 프리셋 저장 실패:', err);
+      setPresetState(prev);
+      pushNotification('저장 실패', '취침 모드 설정이 서버에 반영되지 않았어요. 다시 시도해 주세요.');
+    });
   };
 
   return (

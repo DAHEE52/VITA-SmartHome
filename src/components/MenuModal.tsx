@@ -1,13 +1,14 @@
 // 메인화면 헤더의 "메뉴"(햄버거) 아이콘을 누르면 뜨는 전체 기능 목록 창.
-// 앱에 구현되어 있는 화면(홈/스마트홈 제어/캘린더/에너지 사용량/에너지 나무/화재 예방 시스템/
-// 안전 가이드북/전기요금 영수증 미리보기/설정)으로 바로 이동할 수 있는 버튼을 한 곳에 모아둔다.
+// 메인화면 하단에 이미 바로가기 카드(스마트홈 제어/캘린더/에너지 사용량/에너지 나무)가 있는
+// 화면은 여기서 중복으로 보여주지 않고, 그 카드들에 없는 나머지 화면(홈/자동화 규칙/화재 예방
+// 시스템/안전 가이드북/전기요금 영수증 미리보기/취침 모드 관리/수면 통계/설정)만 모아둔다.
 import React from 'react';
 import { Modal, Pressable, View, Text, Image, StyleSheet } from 'react-native';
 import AnimatedPressable from './AnimatedPressable';
 import { useNavigation } from '@react-navigation/native';
 
 import { colors, fonts } from '../theme/colors';
-import { RemoteIcon, CalendarIcon, ChartUpIcon, TreeIcon, AutomationIcon, GearIcon } from './icons';
+import { AutomationIcon, GearIcon } from './icons';
 
 type MenuItem = {
   key: string;
@@ -32,25 +33,11 @@ const MENU_ITEMS: MenuItem[] = [
     ),
   },
   {
-    key: 'smarthome',
-    label: '스마트홈 제어',
-    route: 'SmartHomeControl',
-    renderIcon: () => <RemoteIcon size={ICON_SIZE} />,
-  },
-  { key: 'calendar', label: '캘린더', route: 'Calendar', renderIcon: () => <CalendarIcon size={ICON_SIZE} /> },
-  {
     key: 'automation',
     label: '자동화 규칙',
     route: 'Automation',
     renderIcon: () => <AutomationIcon size={ICON_SIZE} />,
   },
-  {
-    key: 'energy',
-    label: '에너지 사용량',
-    route: 'EnergyUsage',
-    renderIcon: () => <ChartUpIcon size={ICON_SIZE} />,
-  },
-  { key: 'tree', label: '에너지 나무', route: 'EnergyTree', renderIcon: () => <TreeIcon size={ICON_SIZE} /> },
   {
     key: 'fire',
     label: '화재 예방 시스템',
@@ -98,12 +85,6 @@ const MENU_ITEMS: MenuItem[] = [
     label: '수면 통계',
     route: 'SleepStats',
     renderIcon: () => <Text style={{ fontSize: ICON_SIZE - 4 }}>💤</Text>,
-  },
-  {
-    key: 'lifePattern',
-    label: '생활 패턴 분석',
-    route: 'LifePattern',
-    renderIcon: () => <Text style={{ fontSize: ICON_SIZE - 4 }}>🧭</Text>,
   },
   {
     key: 'settings',

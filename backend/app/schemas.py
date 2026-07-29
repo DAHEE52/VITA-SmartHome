@@ -12,6 +12,11 @@ class DeviceRegister(BaseModel):
     device_id: str
     type: DeviceType
     label: Optional[str] = None
+    # 릴레이가 달린 기기(relay, 또는 릴레이+전력측정을 겸하는 스마트 콘센트형 power_monitor)가
+    # 부팅 직후 보내는 실제 물리 상태. ESP32는 재부팅/정전 복구 시 릴레이가 항상 꺼진 채로
+    # 시작하는데, 이 값이 없으면 DB의 state가 정전 전 값(예: "on")에 그대로 머물러 앱에
+    # 실제와 다른 상태가 표시된다. 릴레이가 없는 순수 센서 기기는 보내지 않아도 된다.
+    state: Optional[CommandName] = None
 
 
 class Reading(BaseModel):
@@ -204,27 +209,20 @@ class AutomationRuleOut(BaseModel):
     enabled: bool
 
 
+class SleepDeviceConfig(BaseModel):
+    device_id: str
+    on: bool
+
+
 class SleepPresetOut(BaseModel):
-    light_on: bool
-    aircon_on: bool
-    aircon_temp: int
-    dehumidify: bool
-    humidifier_on: bool
-    tv_off: bool
-    pc_off: bool
+    devices: list[SleepDeviceConfig]
     bedtime_hour: int
     no_motion_minutes: int
     confirm_wait_minutes: int
 
 
 class SleepPresetUpdate(BaseModel):
-    light_on: Optional[bool] = None
-    aircon_on: Optional[bool] = None
-    aircon_temp: Optional[int] = None
-    dehumidify: Optional[bool] = None
-    humidifier_on: Optional[bool] = None
-    tv_off: Optional[bool] = None
-    pc_off: Optional[bool] = None
+    devices: Optional[list[SleepDeviceConfig]] = None
     bedtime_hour: Optional[int] = None
     no_motion_minutes: Optional[int] = None
     confirm_wait_minutes: Optional[int] = None
@@ -248,15 +246,3 @@ class ClassifyIn(BaseModel):
     model: Literal["life_pattern"]
     label: str
     confidence: Optional[float] = None
-
-
-class PatternEventOut(BaseModel):
-    label: str
-    confidence: Optional[float] = None
-    recorded_at: str
-
-
-class PatternSegment(BaseModel):
-    label: str
-    started_at: str
-    ended_at: Optional[str] = None

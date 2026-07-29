@@ -6,19 +6,96 @@
 // 이 화면의 "실시간 소비전력"도 즉시 따라 바뀐다. 기기별 소비전력(W)과 요금표는 실제 스펙/한전 API
 // 연동 전이라 src/utils/energy.ts의 근사치를 쓰고, 화면에도 "예상치"임을 안내한다.
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import { useRooms } from '../context/RoomsContext';
+import { useGoal } from '../context/GoalContext';
+import { useEnergyHistory } from '../context/EnergyHistoryContext';
 import { getActiveDevices, estimateTotalWatts, calcBill, BASELINE_STANDBY_WATT } from '../utils/energy';
 
 const SCREEN_PADDING = 20;
 
 function formatWon(n: number) {
-  return `${n.toLocaleString('ko-KR')}원`;
+  return `${Math.round(n).toLocaleString('ko-KR')}원`;
+}
+
+// "한국 평균 전력 소비량"의 1인 가구 월간 근사치(kWh) - 절감액 계산의 "절약 안 했을 때" 기준선.
+// VITA는 원룸 전용 서비스라 가구 인원은 항상 1인이다(MainScreen의 절전 목표 카드와 동일한 상수).
+const HOUSEHOLD_AVG_KWH_1P = 200;
+
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
+}
+function todayKey(d: Date) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function dayFractionElapsed(now: Date): number {
+  const seconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  return Math.max(0.02, seconds / 86400);
+}
+
+// 실시간 절감액 카드 - 원래 메인화면에 있었지만, "얼마나 아꼈는지"는 전기요금 예상치와 함께
+// 보는 게 더 자연스러워서 이 화면으로 옮겼다. EnergyHistoryContext(실측 누적 kWh)와
+// GoalContext(절전 목표)를 조합해서 계산한다: 가구 평균(HOUSEHOLD_AVG_KWH_1P)을 "절약 안
+// 했을 때의 기준선"으로 삼고, 지금까지 지난 시간 비율만큼의 기준 사용량보다 실제로 적게
+// 썼으면 그 차이를 절감액으로 환산한다.
+function SavingsCard() {
+  const { goalKwh } = useGoal();
+  const { dailyUsage } = useEnergyHistory();
+
+  if (goalKwh == null) {
+    return (
+      <Card style={styles.card}>
+        <Text style={styles.cardTitle}>💰 실시간 절감액</Text>
+        <Text style={styles.emptyHint}>절전 목표를 설정하면 절감액을 계산해드려요.</Text>
+      </Card>
+    );
+  }
+
+  const baselineMonthlyKwh = HOUSEHOLD_AVG_KWH_1P;
+  const baselineDailyKwh = baselineMonthlyKwh / 30;
+  const unitPrice = calcBill(baselineMonthlyKwh).total / baselineMonthlyKwh;
+
+  const now = new Date();
+  const dayFraction = dayFractionElapsed(now);
+  const todayUsageKwh = dailyUsage[todayKey(now)] ?? 0;
+  const todaySavedKwh = Math.max(0, baselineDailyKwh * dayFraction - todayUsageKwh);
+  const todaySavedWon = todaySavedKwh * unitPrice;
+
+  const monthPrefix = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-`;
+  const monthUsageKwh = Object.entries(dailyUsage)
+    .filter(([key]) => key.startsWith(monthPrefix))
+    .reduce((sum, [, v]) => sum + v, 0);
+  const daysSoFar = now.getDate() - 1 + dayFraction;
+  const monthSavedKwh = Math.max(0, baselineDailyKwh * daysSoFar - monthUsageKwh);
+  const monthSavedWon = monthSavedKwh * unitPrice;
+
+  const annualGoalSavingKwh = Math.max(0, baselineMonthlyKwh - goalKwh);
+  const annualSavedWon = annualGoalSavingKwh * unitPrice * 12;
+
+  return (
+    <Card style={styles.card}>
+      <Text style={styles.cardTitle}>💰 실시간 절감액</Text>
+      <View style={styles.savingsRow}>
+        <View style={styles.savingsCol}>
+          <Text style={styles.savingsLabel}>오늘</Text>
+          <Text style={styles.savingsValue}>{formatWon(todaySavedWon)}</Text>
+        </View>
+        <View style={styles.savingsCol}>
+          <Text style={styles.savingsLabel}>이번 달</Text>
+          <Text style={styles.savingsValue}>{formatWon(monthSavedWon)}</Text>
+        </View>
+        <View style={styles.savingsCol}>
+          <Text style={styles.savingsLabel}>목표 달성 시 연간</Text>
+          <Text style={styles.savingsValue}>{formatWon(annualSavedWon)}</Text>
+        </View>
+      </View>
+    </Card>
+  );
 }
 
 function ActiveDeviceRow({ room, device, watt }: { room: string; device: string; watt: number }) {
@@ -61,7 +138,7 @@ export default function BillReceiptScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Text style={styles.headerIcon}>🧾</Text>
+        <Image source={require('../../assets/icons/7-receipt.png')} style={styles.headerIcon} resizeMode="contain" />
         <Text style={styles.headerTitle}>전기요금 영수증 미리보기</Text>
       </View>
 
@@ -108,6 +185,8 @@ export default function BillReceiptScreen() {
           </View>
         </Card>
 
+        <SavingsCard />
+
         <Card style={styles.receiptCard}>
           <Text style={styles.receiptTitle}>영수증 미리보기</Text>
           <Text style={styles.receiptDash}>- - - - - - - - - - - - - - - - - - - -</Text>
@@ -152,7 +231,8 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   headerIcon: {
-    fontSize: 26,
+    width: 26,
+    height: 26,
   },
   headerTitle: {
     fontFamily: fonts.jalnan,
@@ -231,6 +311,26 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 13,
     color: colors.textGray,
+  },
+
+  savingsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  savingsCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  savingsLabel: {
+    fontSize: 12,
+    color: colors.textGray,
+  },
+  savingsValue: {
+    fontFamily: fonts.jalnan,
+    fontSize: 16,
+    color: colors.orange,
+    marginTop: 4,
   },
 
   progressText: {

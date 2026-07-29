@@ -59,9 +59,16 @@ export function deleteRoom(roomId: number): Promise<{ ok: boolean }> {
   return request(`/rooms/${roomId}`, { method: 'DELETE' });
 }
 
-// 실제 ESP32 없이 /devices/register가 하는 일을 흉내내는 프로토타입 전용 엔드포인트.
-export function mockRegisterDevice(name?: string): Promise<DeviceOut> {
-  return request('/devices/mock-register', { method: 'POST', body: JSON.stringify(name ? { name } : {}) });
+// room_id가 없는 기기 목록 - 실제 ESP32가 부팅 시 스스로 register는 마쳤지만 아직 방에 배정되지 않은 것들.
+// "기기 추가" 모달이 여기서 골라 updateDevice로 방에 배정한다.
+export function getUnassignedDevices(): Promise<DeviceOut[]> {
+  return request<DeviceOut[]>('/devices/unassigned');
+}
+
+export type LatestPower = { power_w: number | null; recorded_at: string | null };
+
+export function getLatestPower(deviceId: string): Promise<LatestPower> {
+  return request<LatestPower>(`/devices/${deviceId}/latest`);
 }
 
 export function updateDevice(
@@ -257,14 +264,15 @@ export function deleteAutomationRule(id: number): Promise<{ ok: boolean }> {
 
 // --- 취침 모드(sleep_preset/sleep_records) ---
 
+// 취침 모드에 포함시킬 기기 하나 - device_id는 실제 등록된 기기(RoomsContext)의 id, on은 취침
+// 모드가 활성화될 때 이 기기를 켤지/끌지.
+export type SleepDeviceConfig = {
+  device_id: string;
+  on: boolean;
+};
+
 export type SleepPreset = {
-  light_on: boolean;
-  aircon_on: boolean;
-  aircon_temp: number;
-  dehumidify: boolean;
-  humidifier_on: boolean;
-  tv_off: boolean;
-  pc_off: boolean;
+  devices: SleepDeviceConfig[];
   bedtime_hour: number;
   no_motion_minutes: number;
   confirm_wait_minutes: number;
@@ -294,26 +302,4 @@ export function startSleepRecord(sleepStartedAt: string): Promise<SleepRecord> {
 
 export function endSleepRecord(id: number, sleepEndedAt: string): Promise<SleepRecord> {
   return request(`/sleep/records/${id}`, { method: 'PATCH', body: JSON.stringify({ sleep_ended_at: sleepEndedAt }) });
-}
-
-// --- 생활 패턴 분류(classification_events) ---
-
-export type PatternEvent = {
-  label: string;
-  confidence: number | null;
-  recorded_at: string;
-};
-
-export type PatternSegment = {
-  label: string;
-  started_at: string;
-  ended_at: string | null;
-};
-
-export function getPatternLatest(): Promise<PatternEvent | null> {
-  return request<PatternEvent | null>('/pattern/latest');
-}
-
-export function getPatternToday(): Promise<PatternSegment[]> {
-  return request<PatternSegment[]>('/pattern/today');
 }

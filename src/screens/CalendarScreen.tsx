@@ -14,7 +14,6 @@ import {
   TextInput,
   ScrollView,
   PanResponder,
-  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AnimatedPressable from '../components/AnimatedPressable';
@@ -23,6 +22,7 @@ import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import { PlusIcon, EllipsisIcon } from '../components/icons';
+import { useAppWindowDimensions } from '../hooks/useAppWindowDimensions';
 import { useCalendar, ScheduleItem, SpecialKind, NewScheduleItemInput } from '../context/CalendarContext';
 
 // prev -> next로 바뀐 필드만 뽑아 백엔드 PATCH에 보낼 patch 객체를 만든다.
@@ -852,7 +852,7 @@ function AddScheduleModal({
 }
 
 export default function CalendarScreen() {
-  const { height } = useWindowDimensions();
+  const { height } = useAppWindowDimensions();
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
 
   const [viewYear, setViewYear] = useState(now.getFullYear());

@@ -7,6 +7,7 @@
 // state를 낙관적으로 갱신한 뒤 백엔드에도 반영한다.
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import * as api from '../api/client';
+import { rollbackOnFailure } from '../utils/optimisticUpdate';
 
 export type NotificationItem = {
   id: string;
@@ -63,16 +64,21 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  // markAsRead/deleteNotification은 알림함 자기 자신에 관한 동작이라, 실패했을 때 "저장 실패"
+  // 알림을 새로 만들면(재귀적으로 알림함에 알림이 쌓임) 오히려 헷갈린다. 대신 실패하면 화면을 조용히
+  // 원래 상태로 되돌려서(예: 지웠던 알림이 다시 보임) 그 자체가 "반영 안 됐다"는 신호가 되게 한다.
   const markAsRead = (id: string) => {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-    api.markNotificationRead(Number(id)).catch((err) => console.warn('알림 읽음 처리 실패:', err));
+    const prev = notifications;
+    setNotifications((p) => p.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    rollbackOnFailure(api.markNotificationRead(Number(id)), prev, setNotifications, '알림 읽음 처리');
   };
 
   // 읽은 알림만 삭제할 수 있다 - 안읽은 알림은 먼저 확인(markAsRead)해야 삭제 버튼이 나타나고,
   // 혹시 안읽은 알림에 대해 호출되더라도 여기서 한 번 더 막아준다.
   const deleteNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => !(n.id === id && n.read)));
-    api.deleteNotification(Number(id)).catch((err) => console.warn('알림 삭제 실패:', err));
+    const prev = notifications;
+    setNotifications((p) => p.filter((n) => !(n.id === id && n.read)));
+    rollbackOnFailure(api.deleteNotification(Number(id)), prev, setNotifications, '알림 삭제');
   };
 
   // 화재 예방 시스템의 자동 차단 등, 앱이 스스로 만들어내는 알림을 목록 맨 앞에 안읽음 상태로 추가한다.
