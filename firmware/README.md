@@ -2,6 +2,8 @@
 
 FastAPI 백엔드(`VITA/backend/`)와 HTTP로 통신하는 ESP32 펌웨어. 각 폴더가 독립된 Arduino 스케치다.
 
+실제 부품 배선/납땜 방법은 [WIRING_GUIDE.md](WIRING_GUIDE.md) 참고 (AC 전원을 다루는 안전 수칙 포함).
+
 | 폴더 | 하드웨어 | 역할 |
 |---|---|---|
 | `env_presence_node/` | XIAO ESP32S3 + BME280(I2C) + PIR(HC-SR501) | 온습도/재실(움직임) 감지, 30~60초마다 서버로 push. **취침 감지(SleepContext) 상태머신이 여기서 push하는 `motion` 값을 그대로 쓴다** - 별도 취침 전용 센서 없이도 무움직임 30분 판정이 가능함 |
