@@ -124,7 +124,7 @@ function StatusCard({ scale, summary }: { scale: number; summary: HomeSummary | 
   const iconWrapStyle = [styles.statusIconWrap, { height: 60 * scale, marginTop: 14 * scale }];
   const valueStyle = [styles.statusValue, { fontSize: 19 * scale, marginTop: 14 * scale }];
   const labelStyle = [styles.statusLabel, { fontSize: 16 * scale }];
-  const humidityText = summary?.humidity != null ? `${summary.humidity} %` : '-';
+  const humidityText = summary?.humidity != null ? `${summary.humidity.toFixed(1)} %` : '-';
   const temperatureText = summary?.temperature != null ? `${summary.temperature.toFixed(1)} °C` : '-';
   return (
     <Card style={[styles.statusCard, { padding: 20 * scale }]}>
