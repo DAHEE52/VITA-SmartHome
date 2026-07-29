@@ -1,7 +1,8 @@
 // 메인화면 헤더의 "메뉴"(햄버거) 아이콘을 누르면 뜨는 전체 기능 목록 창.
 // 메인화면 하단에 이미 바로가기 카드(스마트홈 제어/캘린더/에너지 사용량/에너지 나무)가 있는
-// 화면은 여기서 중복으로 보여주지 않고, 그 카드들에 없는 나머지 화면(홈/자동화 규칙/화재 예방
+// 화면은 여기서 중복으로 보여주지 않고, 그 카드들에 없는 나머지 화면(자동화 규칙/화재 예방
 // 시스템/안전 가이드북/전기요금 영수증 미리보기/취침 모드 관리/수면 통계/설정)만 모아둔다.
+// 홈은 하단 네비게이션(BottomNav)에 이미 있으므로 여기서는 중복으로 넣지 않는다.
 import React from 'react';
 import { Modal, Pressable, View, Text, Image, StyleSheet } from 'react-native';
 import AnimatedPressable from './AnimatedPressable';
@@ -20,18 +21,6 @@ type MenuItem = {
 const ICON_SIZE = 26;
 
 const MENU_ITEMS: MenuItem[] = [
-  {
-    key: 'home',
-    label: '홈',
-    route: 'Main',
-    renderIcon: () => (
-      <Image
-        source={require('../../assets/icons/5-home.png')}
-        style={{ width: ICON_SIZE, height: ICON_SIZE }}
-        resizeMode="contain"
-      />
-    ),
-  },
   {
     key: 'automation',
     label: '자동화 규칙',

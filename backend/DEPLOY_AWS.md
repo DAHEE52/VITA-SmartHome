@@ -27,6 +27,20 @@ cp -r app build/
 cd build && zip -r ../lambda_deploy.zip . -x '*__pycache__*' && cd ..
 ```
 
+> Git Bash에 `zip` 명령이 없는 환경(이 프로젝트에서 실제로 그랬음)이면 대신:
+> ```bash
+> venv/Scripts/python -c "
+> import zipfile, os
+> zf = zipfile.ZipFile('lambda_deploy.zip', 'w', zipfile.ZIP_DEFLATED)
+> for root, dirs, files in os.walk('build'):
+>     dirs[:] = [d for d in dirs if d != '__pycache__']
+>     for f in files:
+>         full = os.path.join(root, f)
+>         zf.write(full, os.path.relpath(full, 'build'))
+> zf.close()
+> "
+> ```
+
 > `supabase` 패키지가 여러 하위 패키지(postgrest/realtime/storage3/supabase_auth/supabase_functions)를 딸려오므로 zip 용량이 콘솔 직접 업로드 한도(50MB, 압축 기준)를 넘을 수 있다. 넘으면 S3 업로드 경유로 전환한다 (`aws s3 cp lambda_deploy.zip s3://<버킷>/` 후 `aws lambda update-function-code --s3-bucket ... --s3-key ...`).
 
 ## 3. IAM 실행 역할 생성
@@ -75,6 +89,17 @@ aws lambda add-permission \
   --action lambda:InvokeFunctionUrl \
   --principal '*' \
   --function-url-auth-type NONE \
+  --region ap-northeast-2
+
+# 2025년 10월부터 AWS가 Function URL에 위 lambda:InvokeFunctionUrl 권한과 별개로
+# lambda:InvokeFunction 권한도 요구하도록 정책을 바꿨다 - 이게 없으면 함수/URL 설정이
+# 전부 맞아도 403 Forbidden이 난다(2026-07-29 실제로 겪음).
+aws lambda add-permission \
+  --function-name vita-backend \
+  --statement-id UrlPolicyInvokeFunction \
+  --action lambda:InvokeFunction \
+  --principal '*' \
+  --invoked-via-function-url \
   --region ap-northeast-2
 ```
 

@@ -9,6 +9,7 @@
 
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <PZEM004Tv30.h>
 
@@ -21,6 +22,11 @@ HardwareSerial pzemSerial(1);
 PZEM004Tv30 pzem(pzemSerial, /*RX*/ D7, /*TX*/ D6);
 
 unsigned long lastPushMs = 0;
+
+// 백엔드가 AWS Lambda Function URL(HTTPS 전용)로 배포되어 있어 TLS 클라이언트가 필요하다.
+// 서버 인증서를 별도로 검증하지 않는다(setInsecure) - X-Device-Key 헤더로 기기를 인증하는
+// 기존 신뢰 모델을 그대로 쓰고, 전송 구간 암호화만 추가하는 목적.
+WiFiClientSecure secureClient;
 
 void connectWiFi() {
   WiFi.mode(WIFI_STA);
@@ -37,7 +43,7 @@ void connectWiFi() {
 
 int postJson(const String &path, JsonDocument &doc) {
   HTTPClient http;
-  http.begin(String(API_BASE_URL) + path);
+  http.begin(secureClient, String(API_BASE_URL) + path);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Device-Key", DEVICE_KEY);
 
@@ -94,6 +100,7 @@ void pushReadings() {
 void setup() {
   Serial.begin(115200);
 
+  secureClient.setInsecure();
   connectWiFi();
   registerDevice();
 }

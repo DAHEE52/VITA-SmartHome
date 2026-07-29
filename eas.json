@@ -11,7 +11,7 @@
       },
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://192.168.200.141:8000"
+        "EXPO_PUBLIC_API_URL": "https://yngndbonhttzfuptrjxrywoqs40iblyr.lambda-url.ap-northeast-2.on.aws"
       }
     },
     "production": {
