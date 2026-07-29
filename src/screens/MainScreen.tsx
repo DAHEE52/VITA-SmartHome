@@ -569,12 +569,18 @@ export default function MainScreen() {
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
 
   const [summary, setSummary] = useState<HomeSummary | null>(null);
-  // 화면에 들어올 때마다(다른 화면 갔다 돌아올 때 포함) 최신 센서값으로 다시 불러온다.
+  // 화면에 머무는 동안 센서 노드의 push 주기(30초)에 맞춰 계속 다시 불러와 라이브 업데이트한다.
+  // 화면을 벗어나면(다른 탭 이동 등) interval을 정리해 불필요한 요청을 막는다.
   useFocusEffect(
     useCallback(() => {
-      getHomeSummary()
-        .then(setSummary)
-        .catch((err) => console.warn('홈 요약 조회 실패:', err));
+      const refresh = () => {
+        getHomeSummary()
+          .then(setSummary)
+          .catch((err) => console.warn('홈 요약 조회 실패:', err));
+      };
+      refresh();
+      const timer = setInterval(refresh, 30000);
+      return () => clearInterval(timer);
     }, [])
   );
 
