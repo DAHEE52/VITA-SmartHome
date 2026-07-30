@@ -16,25 +16,30 @@ import { useRooms } from './RoomsContext';
 import { useNotifications } from './NotificationsContext';
 import { usePresence } from './PresenceContext';
 import { rollbackOnFailure } from '../utils/optimisticUpdate';
+import { getDeviceType } from '../utils/energy';
 
-const CHECK_INTERVAL_MS = 20000; // 20초마다 모든 규칙의 발동 여부를 검사한다.
+const CHECK_INTERVAL_MS = 20000; // 20초마다 모든 규칙의 발동 여부 + 온도 유지 상태를 검사한다.
+// 목표 온도 주위로 이 범위 안이면 에어컨/난방을 더 조작하지 않는다(경계값에서 계속 켜졌다 꺼졌다
+// 반복하는 걸 막기 위한 완충 구간).
+const THERMOSTAT_HYSTERESIS_C = 0.5;
 
 export type AutomationTrigger =
   | { kind: 'outing' } // 캘린더 SPECIAL 중 kind='outing'(외출 예정) 전체
   | { kind: 'overnight' } // 캘린더 SPECIAL 중 kind='overnight'(외박 일정) 전체
   | { kind: 'routine'; routineId: string } // 특정 DAILY(요일별 루틴) 항목 하나를 참조
-  | { kind: 'presence' }; // 재실/외출 여부(PresenceContext, 카메라 감지 결과)가 바뀔 때
+  | { kind: 'presence' }; // 재실/외출 여부(PresenceContext, 카메라+PIR 융합 결과)가 바뀔 때
 
 export type AutomationAction =
-  | { kind: 'device_on'; deviceName: string }
-  | { kind: 'device_off'; deviceName: string }
+  | { kind: 'light_on' } // 방의 조명류(getDeviceType==='조명') 기기를 전부 켠다
+  | { kind: 'light_off' } // 방의 조명류 기기를 전부 끈다
+  | { kind: 'power_cut' } // 방에 등록된 기기를 전부 끈다(전원 차단)
   | { kind: 'set_temp'; targetTemp: number }
   | { kind: 'presence_temp'; homeTemp: number; awayTemp: number }; // 재실이면 homeTemp, 외출 중이면 awayTemp
 
 export type AutomationRule = {
   id: string;
   trigger: AutomationTrigger;
-  offsetMinutes: number; // 일정 시각보다 몇 분 "전"에 실행할지 (0 = 정시)
+  executeTime: string; // "HH:MM" - 이 시각에 정확히 실행(트리거 조건도 그날 충족해야 함). presence 트리거는 사용하지 않음.
   roomId: string;
   action: AutomationAction;
   enabled: boolean;
@@ -42,7 +47,7 @@ export type AutomationRule = {
 
 type NewRuleInput = {
   trigger: AutomationTrigger;
-  offsetMinutes: number;
+  executeTime: string;
   roomId: string;
   action: AutomationAction;
 };
@@ -76,45 +81,38 @@ function dateKey(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-// 일정 시각에서 offsetMinutes를 뺀 "실행 목표 시각"을 구한다. 자정을 넘어가면 그냥 modulo로만
-// 감싸고(전날로 날짜/요일을 재계산하지는 않음) - 이 앱 범위에서는 과설계라 판단해 생략.
-function subtractOffset(time: string, offsetMinutes: number): string | null {
+// executeTime("HH:MM")을 자정 기준 분으로 바꿔서 backend의 offset_minutes 컬럼에 그대로 저장한다
+// (스키마를 새로 만들지 않고 기존 정수 컬럼을 재사용 - 값의 의미만 "오프셋"에서 "자정 이후 분"으로 바뀜).
+function timeToMinutes(time: string): number {
   const parsed = parseHHMM(time);
-  if (!parsed) return null;
-  const total = (((parsed.hour * 60 + parsed.minute - offsetMinutes) % 1440) + 1440) % 1440;
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  return parsed ? parsed.hour * 60 + parsed.minute : 0;
+}
+function minutesToTime(totalMinutes: number): string {
+  const clamped = ((totalMinutes % 1440) + 1440) % 1440;
+  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
 }
 
-type Occurrence = { time: string; occurrenceId: string };
-
-// 규칙의 트리거가 "오늘" 발동할 대상(들)이 있는지 캘린더 데이터에서 찾는다.
-function findOccurrences(
+// 규칙의 트리거 조건이 "오늘" 충족되는지(캘린더에 해당 종류의 일정이 있는지)만 본다 - 정확히 언제
+// 실행할지는 이제 규칙 자체의 executeTime이 결정하므로, 그 일정 항목의 시각은 더 이상 보지 않는다.
+function hasOccurrenceToday(
   trigger: AutomationTrigger,
   dailyItems: ScheduleItem[],
   specialItems: ScheduleItem[],
   now: Date
-): Occurrence[] {
+): boolean {
   if (trigger.kind === 'routine') {
     const routine = dailyItems.find((it) => it.id === trigger.routineId);
-    if (!routine || !routine.time) return [];
+    if (!routine) return false;
     const weekdays = routine.weekdays;
-    const matchesToday = !weekdays || weekdays.length === 0 || weekdays.includes(now.getDay());
-    return matchesToday ? [{ time: routine.time, occurrenceId: routine.id }] : [];
+    return !weekdays || weekdays.length === 0 || weekdays.includes(now.getDay());
   }
 
   const y = now.getFullYear();
   const m = now.getMonth() + 1;
   const d = now.getDate();
-  return specialItems
-    .filter(
-      (it) =>
-        it.kind === trigger.kind &&
-        !!it.time &&
-        it.date?.year === y &&
-        it.date?.month === m &&
-        it.date?.day === d
-    )
-    .map((it) => ({ time: it.time, occurrenceId: it.id }));
+  return specialItems.some(
+    (it) => it.kind === trigger.kind && it.date?.year === y && it.date?.month === m && it.date?.day === d
+  );
 }
 
 // 규칙 카드/알림 문구에 쓰는 트리거 설명. 루틴은 삭제될 수 있으므로 그 경우도 처리한다.
@@ -132,7 +130,7 @@ function fromApiRule(r: api.AutomationRuleOut): AutomationRule {
   return {
     id: String(r.id),
     trigger: r.trigger as unknown as AutomationTrigger,
-    offsetMinutes: r.offset_minutes,
+    executeTime: minutesToTime(r.offset_minutes),
     roomId: String(r.room_id),
     action: r.action as unknown as AutomationAction,
     enabled: r.enabled,
@@ -143,7 +141,7 @@ function fromApiRule(r: api.AutomationRuleOut): AutomationRule {
 function toApiRulePatch(patch: Partial<NewRuleInput>) {
   const body: { trigger?: AutomationTrigger; offset_minutes?: number; room_id?: number; action?: AutomationAction } = {};
   if ('trigger' in patch) body.trigger = patch.trigger;
-  if ('offsetMinutes' in patch) body.offset_minutes = patch.offsetMinutes;
+  if ('executeTime' in patch && patch.executeTime != null) body.offset_minutes = timeToMinutes(patch.executeTime);
   if ('roomId' in patch && patch.roomId != null) body.room_id = Number(patch.roomId);
   if ('action' in patch) body.action = patch.action;
   return body;
@@ -175,12 +173,35 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   const isHomeRef = useRef(isHome);
   isHomeRef.current = isHome;
 
-  // 이미 실행한 (규칙, 날짜, occurrence, 목표시각) 조합을 기록해 같은 발동이 하루 안에서 여러 번
-  // (매 tick마다) 반복 실행되는 걸 막는다. 렌더와 무관한 값이라 state가 아니라 ref로 둔다.
+  // 이미 실행한 (규칙, 날짜) 조합을 기록해 같은 발동이 하루 안에서 여러 번(매 tick마다) 반복
+  // 실행되는 걸 막는다. 렌더와 무관한 값이라 state가 아니라 ref로 둔다.
   const firedKeysRef = useRef<Set<string>>(new Set());
   // 재실/외출 규칙은 "시각"이 아니라 "상태 전환"에 반응해야 하므로, 규칙별로 마지막에 반영한
   // isHome 값을 따로 기록해 실제로 상태가 바뀌었을 때만(그리고 처음 만들었을 때 한 번) 실행한다.
   const presenceAppliedRef = useRef<Map<string, boolean>>(new Map());
+
+  // 실시간 실내 온도(env_sensor 평균) - 아래 온도 유지 루프가 목표 온도와 비교하는 데 쓴다.
+  const [currentTemp, setCurrentTemp] = useState<number | null>(null);
+  const currentTempRef = useRef(currentTemp);
+  currentTempRef.current = currentTemp;
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      api
+        .getHomeSummary()
+        .then((s) => {
+          if (!cancelled) setCurrentTemp(s.temperature);
+        })
+        .catch((err) => console.warn('실내 온도 조회 실패:', err));
+    };
+    poll();
+    const timer = setInterval(poll, CHECK_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -207,41 +228,64 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
           continue;
         }
 
-        const occurrences = findOccurrences(rule.trigger, dailyItemsRef.current, specialItemsRef.current, now);
-        for (const occ of occurrences) {
-          const targetTime = subtractOffset(occ.time, rule.offsetMinutes);
-          if (!targetTime || targetTime !== nowHHMM) continue;
+        if (rule.trigger.kind === 'presence') continue; // presence 트리거는 항상 presence_temp 액션과만 짝지어진다.
+        if (rule.executeTime !== nowHHMM) continue;
+        if (!hasOccurrenceToday(rule.trigger, dailyItemsRef.current, specialItemsRef.current, now)) continue;
 
-          const fireKey = `${rule.id}:${today}:${occ.occurrenceId}:${targetTime}`;
-          if (firedKeysRef.current.has(fireKey)) continue;
-          firedKeysRef.current.add(fireKey);
+        const fireKey = `${rule.id}:${today}`;
+        if (firedKeysRef.current.has(fireKey)) continue;
+        firedKeysRef.current.add(fireKey);
 
-          const room = roomsRef.current.find((r) => r.id === rule.roomId);
-          if (!room) continue;
+        const room = roomsRef.current.find((r) => r.id === rule.roomId);
+        if (!room) continue;
 
-          const triggerText = describeTrigger(rule.trigger, dailyItemsRef.current);
+        const triggerText = describeTrigger(rule.trigger, dailyItemsRef.current);
 
-          if (rule.action.kind === 'device_on') {
-            setDevicePowerRef.current(room.id, rule.action.deviceName, true);
-            pushNotificationRef.current(
-              '🔁 자동화 실행',
-              `${triggerText}에 따라 ${room.label}의 "${rule.action.deviceName}"을(를) 켰어요.`
-            );
-          } else if (rule.action.kind === 'device_off') {
-            setDevicePowerRef.current(room.id, rule.action.deviceName, false);
-            pushNotificationRef.current(
-              '🔁 자동화 실행',
-              `${triggerText}에 따라 ${room.label}의 "${rule.action.deviceName}"을(를) 껐어요.`
-            );
-          } else if (rule.action.kind === 'set_temp') {
-            setRoomTargetTempRef.current(room.id, rule.action.targetTemp);
-            pushNotificationRef.current(
-              '🔁 자동화 실행',
-              `${triggerText}에 따라 ${room.label}의 목표 온도를 ${rule.action.targetTemp}°C로 설정했어요.`
-            );
+        if (rule.action.kind === 'light_on' || rule.action.kind === 'light_off') {
+          const on = rule.action.kind === 'light_on';
+          const lights = room.devices.filter((d) => getDeviceType(d.name) === '조명');
+          lights.forEach((d) => setDevicePowerRef.current(room.id, d.name, on));
+          pushNotificationRef.current(
+            '🔁 자동화 실행',
+            `${triggerText}에 따라 ${room.label}의 조명을 ${on ? '켰어요' : '껐어요'}.`
+          );
+        } else if (rule.action.kind === 'power_cut') {
+          room.devices.forEach((d) => setDevicePowerRef.current(room.id, d.name, false));
+          pushNotificationRef.current('🔁 자동화 실행', `${triggerText}에 따라 ${room.label}의 전원을 모두 차단했어요.`);
+        } else if (rule.action.kind === 'set_temp') {
+          setRoomTargetTempRef.current(room.id, rule.action.targetTemp);
+          pushNotificationRef.current(
+            '🔁 자동화 실행',
+            `${triggerText}에 따라 ${room.label}의 목표 온도를 ${rule.action.targetTemp}°C로 설정했어요.`
+          );
+        }
+        // action.kind === 'presence_temp'는 trigger.kind === 'presence' 규칙에서만 쓰이고,
+        // 그 경우는 위에서 이미 처리하고 continue하므로 여기까지 오지 않는다.
+      }
+
+      // 온도 유지 루프 - 목표 온도(room.targetTemp, 수동 스테퍼 또는 위 액션이 설정)와 실내 온도를
+      // 비교해서, 자동 모드인 에어컨/난방기기 스마트 플러그를 실제로 켜고 꺼서 목표에 맞춘다.
+      // "온도 설정" 액션은 목표 숫자만 바꾸고, 그 목표를 실제로 맞추는 건 이 루프의 역할이다.
+      const temp = currentTempRef.current;
+      if (temp != null) {
+        for (const room of roomsRef.current) {
+          const diff = temp - room.targetTemp;
+          const aircon = room.devices.find((d) => d.mode === 'auto' && getDeviceType(d.name) === '에어컨');
+          const heater = room.devices.find((d) => d.mode === 'auto' && getDeviceType(d.name) === '난방기기');
+
+          if (diff > THERMOSTAT_HYSTERESIS_C) {
+            // 목표보다 더움 - 에어컨 가동, 난방 정지
+            if (aircon && !aircon.on) setDevicePowerRef.current(room.id, aircon.name, true);
+            if (heater && heater.on) setDevicePowerRef.current(room.id, heater.name, false);
+          } else if (diff < -THERMOSTAT_HYSTERESIS_C) {
+            // 목표보다 추움 - 난방 가동, 에어컨 정지
+            if (heater && !heater.on) setDevicePowerRef.current(room.id, heater.name, true);
+            if (aircon && aircon.on) setDevicePowerRef.current(room.id, aircon.name, false);
+          } else {
+            // 완충 구간 안 - 목표 달성으로 보고 둘 다 정지
+            if (aircon && aircon.on) setDevicePowerRef.current(room.id, aircon.name, false);
+            if (heater && heater.on) setDevicePowerRef.current(room.id, heater.name, false);
           }
-          // action.kind === 'presence_temp'는 trigger.kind === 'presence' 규칙에서만 쓰이고,
-          // 그 경우는 위에서 이미 처리하고 continue하므로 여기까지 오지 않는다.
         }
       }
     }, CHECK_INTERVAL_MS);
@@ -267,7 +311,7 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
     api
       .createAutomationRule({
         trigger: input.trigger,
-        offset_minutes: input.offsetMinutes,
+        offset_minutes: timeToMinutes(input.executeTime),
         room_id: Number(input.roomId),
         action: input.action,
         enabled: true,

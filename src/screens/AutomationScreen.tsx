@@ -33,16 +33,26 @@ function summarizeWeekdays(weekdays?: number[]): string {
 }
 
 function describeAction(action: AutomationAction, roomLabel: string): string {
-  if (action.kind === 'device_on') return `${roomLabel} · "${action.deviceName}" 켜기`;
-  if (action.kind === 'device_off') return `${roomLabel} · "${action.deviceName}" 끄기`;
+  if (action.kind === 'light_on') return `${roomLabel} · 조명 켜기`;
+  if (action.kind === 'light_off') return `${roomLabel} · 조명 끄기`;
+  if (action.kind === 'power_cut') return `${roomLabel} · 전력 차단`;
   if (action.kind === 'presence_temp') {
     return `${roomLabel} · 재실 ${action.homeTemp}°C / 외출 ${action.awayTemp}°C`;
   }
   return `${roomLabel} · 목표 온도 ${action.targetTemp}°C`;
 }
 
-function describeOffset(offsetMinutes: number): string {
-  return offsetMinutes === 0 ? '정시 실행' : `${offsetMinutes}분 전 실행`;
+function describeExecuteTime(executeTime: string): string {
+  return `${executeTime} 실행`;
+}
+
+// "HH:MM" 형식인지만 확인한다(AutomationContext의 parseHHMM과 동일한 규칙).
+function isValidHHMM(time: string): boolean {
+  const match = time.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return false;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
 }
 
 type TriggerKind = 'outing' | 'overnight' | 'routine' | 'presence';
@@ -54,9 +64,10 @@ const TRIGGER_OPTIONS: { value: TriggerKind; label: string }[] = [
   { value: 'presence', label: '재실/외출' },
 ];
 
-const ACTION_OPTIONS: { value: 'device_off' | 'device_on' | 'set_temp'; label: string }[] = [
-  { value: 'device_off', label: '기기 끄기' },
-  { value: 'device_on', label: '기기 켜기' },
+const ACTION_OPTIONS: { value: 'light_on' | 'light_off' | 'power_cut' | 'set_temp'; label: string }[] = [
+  { value: 'light_on', label: '조명 켜기' },
+  { value: 'light_off', label: '조명 끄기' },
+  { value: 'power_cut', label: '전력 차단' },
   { value: 'set_temp', label: '온도 설정' },
 ];
 
@@ -97,7 +108,7 @@ function RuleCard({
           />
         </View>
         <Text style={styles.ruleOffset}>
-          {trigger.kind === 'presence' ? '재실 상태가 바뀔 때마다 자동 조절' : describeOffset(rule.offsetMinutes)}
+          {trigger.kind === 'presence' ? '재실 상태가 바뀔 때마다 자동 조절' : describeExecuteTime(rule.executeTime)}
         </Text>
         <Text style={styles.ruleAction} numberOfLines={1}>
           {describeAction(rule.action, roomLabel)}
@@ -109,7 +120,7 @@ function RuleCard({
 
 type SavedRuleInput = {
   trigger: AutomationTrigger;
-  offsetMinutes: number;
+  executeTime: string;
   roomId: string;
   action: AutomationAction;
 };
@@ -134,30 +145,28 @@ function RuleEditModal({
 }) {
   const [triggerKind, setTriggerKind] = useState<TriggerKind>('outing');
   const [routineId, setRoutineId] = useState<string | null>(null);
-  const [offsetText, setOffsetText] = useState('0');
-  const [roomId, setRoomId] = useState<string | null>(null);
-  const [actionKind, setActionKind] = useState<'device_off' | 'device_on' | 'set_temp'>('device_off');
-  const [deviceName, setDeviceName] = useState<string | null>(null);
+  const [executeTimeText, setExecuteTimeText] = useState('07:00');
+  const [actionKind, setActionKind] = useState<'light_on' | 'light_off' | 'power_cut' | 'set_temp'>('light_on');
   const [tempText, setTempText] = useState('22');
   const [homeTempText, setHomeTempText] = useState('24');
   const [awayTempText, setAwayTempText] = useState('28');
+
+  // VITA는 원룸 전용이라 방 선택 UI 없이 항상 유일한 방(rooms[0])에 적용한다.
+  const roomId = rooms[0]?.id ?? null;
 
   React.useEffect(() => {
     if (!visible) return;
     if (initial) {
       setTriggerKind(initial.trigger.kind);
       setRoutineId(initial.trigger.kind === 'routine' ? initial.trigger.routineId : null);
-      setOffsetText(String(initial.offsetMinutes));
-      setRoomId(initial.roomId);
+      setExecuteTimeText(initial.executeTime);
       if (initial.action.kind === 'presence_temp') {
         setHomeTempText(String(initial.action.homeTemp));
         setAwayTempText(String(initial.action.awayTemp));
-        setActionKind('device_off');
-        setDeviceName(null);
+        setActionKind('light_on');
         setTempText('22');
       } else {
         setActionKind(initial.action.kind);
-        setDeviceName(initial.action.kind !== 'set_temp' ? initial.action.deviceName : null);
         setTempText(initial.action.kind === 'set_temp' ? String(initial.action.targetTemp) : '22');
         setHomeTempText('24');
         setAwayTempText('28');
@@ -165,17 +174,14 @@ function RuleEditModal({
     } else {
       setTriggerKind('outing');
       setRoutineId(dailyItems[0]?.id ?? null);
-      setOffsetText('0');
-      setRoomId(rooms[0]?.id ?? null);
-      setActionKind('device_off');
-      setDeviceName(null);
+      setExecuteTimeText('07:00');
+      setActionKind('light_on');
       setTempText('22');
       setHomeTempText('24');
       setAwayTempText('28');
     }
   }, [visible, initial]);
 
-  const selectedRoom = rooms.find((r) => r.id === roomId) ?? null;
   const isPresence = triggerKind === 'presence';
 
   const canSave =
@@ -183,9 +189,7 @@ function RuleEditModal({
     (triggerKind !== 'routine' || !!routineId) &&
     (isPresence
       ? homeTempText.trim() !== '' && awayTempText.trim() !== ''
-      : actionKind === 'set_temp'
-      ? tempText.trim() !== ''
-      : !!deviceName);
+      : isValidHHMM(executeTimeText) && (actionKind !== 'set_temp' || tempText.trim() !== ''));
 
   const handleSave = () => {
     if (canSave && roomId) {
@@ -201,8 +205,8 @@ function RuleEditModal({
           }
         : actionKind === 'set_temp'
         ? { kind: 'set_temp', targetTemp: Math.max(0, Number(tempText) || 0) }
-        : { kind: actionKind, deviceName: deviceName! };
-      onSave({ trigger, offsetMinutes: isPresence ? 0 : Math.max(0, Number(offsetText) || 0), roomId, action });
+        : { kind: actionKind };
+      onSave({ trigger, executeTime: isPresence ? '00:00' : executeTimeText, roomId, action });
     }
     onClose();
   };
@@ -214,7 +218,7 @@ function RuleEditModal({
           <ScrollView showsVerticalScrollIndicator={false}>
             <Text style={styles.modalTitle}>{initial ? '자동화 규칙 수정' : '자동화 규칙 추가'}</Text>
 
-            <Text style={styles.fieldLabel}>언제 실행할까요</Text>
+            <Text style={styles.fieldLabel}>어떤 상황에 실행할까요</Text>
             <View style={styles.chipRow}>
               {TRIGGER_OPTIONS.map((opt) => (
                 <AnimatedPressable
@@ -255,39 +259,19 @@ function RuleEditModal({
 
             {!isPresence && (
               <>
-                <Text style={styles.fieldLabel}>몇 분 전에 실행할까요 (0 = 정시)</Text>
+                <Text style={styles.fieldLabel}>언제 실행할까요</Text>
                 <TextInput
                   style={styles.numberInput}
-                  value={offsetText}
-                  onChangeText={(v) => setOffsetText(v.replace(/[^0-9]/g, ''))}
-                  placeholder="0"
+                  value={executeTimeText}
+                  onChangeText={setExecuteTimeText}
+                  placeholder="07:00"
                   placeholderTextColor={colors.textGray}
-                  keyboardType="number-pad"
+                  keyboardType="numbers-and-punctuation"
                 />
+                {!isValidHHMM(executeTimeText) && (
+                  <Text style={styles.hintText}>"07:00"처럼 시:분 형식으로 입력해 주세요.</Text>
+                )}
               </>
-            )}
-
-            <Text style={styles.fieldLabel}>어느 방에 적용할까요</Text>
-            {rooms.length === 0 ? (
-              // VITA는 원룸 전용이라 방이 자동으로 하나 생성되므로 평소엔 이 분기를 안 탄다 -
-              // 방 목록을 아직 불러오는 중인 순간에만 잠깐 보이는 로딩 상태다.
-              <Text style={styles.hintText}>방 정보를 불러오는 중이에요.</Text>
-            ) : (
-              <View style={styles.chipRowWrap}>
-                {rooms.map((r) => (
-                  <AnimatedPressable
-                    key={r.id}
-                    style={[styles.chip, roomId === r.id && styles.chipSelected]}
-                    onPress={() => {
-                      setRoomId(r.id);
-                      setDeviceName(null);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.chipText, roomId === r.id && styles.chipTextSelected]}>{r.label}</Text>
-                  </AnimatedPressable>
-                ))}
-              </View>
             )}
 
             {isPresence ? (
@@ -329,7 +313,7 @@ function RuleEditModal({
                   ))}
                 </View>
 
-                {actionKind === 'set_temp' ? (
+                {actionKind === 'set_temp' && (
                   <TextInput
                     style={styles.numberInput}
                     value={tempText}
@@ -338,23 +322,6 @@ function RuleEditModal({
                     placeholderTextColor={colors.textGray}
                     keyboardType="number-pad"
                   />
-                ) : !selectedRoom || selectedRoom.devices.length === 0 ? (
-                  <Text style={styles.hintText}>이 방에 등록된 기기가 없어요. 스마트홈 제어에서 먼저 등록해 주세요.</Text>
-                ) : (
-                  <View style={styles.chipRowWrap}>
-                    {selectedRoom.devices.map((d) => (
-                      <AnimatedPressable
-                        key={d.name}
-                        style={[styles.chip, deviceName === d.name && styles.chipSelected]}
-                        onPress={() => setDeviceName(d.name)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.chipText, deviceName === d.name && styles.chipTextSelected]}>
-                          {d.name}
-                        </Text>
-                      </AnimatedPressable>
-                    ))}
-                  </View>
                 )}
               </>
             )}
