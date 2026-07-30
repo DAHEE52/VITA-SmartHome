@@ -29,7 +29,12 @@ const NORMAL_DURATION_MS: Record<string, number> = {
   선풍기: 15 * 60 * 1000,
   조명: 15 * 60 * 1000,
 };
-const DEFAULT_NORMAL_DURATION_MS = 5 * 60 * 1000; // 목록에 없는 기기 종류(가스레인지 등 포함)의 기본값
+// 목록에 없는 기기 종류의 기본값 - 사용자가 자유롭게 이름 붙인 스마트 플러그(예: Tapo 콘센트에 붙인
+// "노트북 밥 먹이기" 같은 이름)는 위 키워드 어디에도 안 걸려 여기로 빠지는데, HIGH_RISK_KEYWORDS는
+// energy.ts의 DEVICE_TYPES에도 전부 포함시켜 놨으므로 여기까지 오는 기기는 실제로 위험군이 아니다.
+// 예전에는 이 기본값이 5분이라 이런 일반 기기가 5분마다 자동으로 꺼지는 문제가 있었다 - 냉장고 등과
+// 같은 "이름만으로는 판단 못 하지만 상시 가동이 정상"으로 보고 Infinity로 둔다.
+const DEFAULT_NORMAL_DURATION_MS = Infinity;
 
 export function getNormalDurationMs(deviceName: string): number {
   const type = getDeviceType(deviceName);

@@ -145,3 +145,25 @@ def test_latest_power_returns_most_recent_value(client):
     res = client.get(f"/devices/{device['id']}/latest")
     assert res.status_code == 200
     assert res.json()["power_w"] == 142.5
+
+
+def test_ack_command_with_brightness_value_marks_device_on(client, fake_supabase):
+    """밝기 조명처럼 command가 "on"/"off"가 아니라 "0"~"100" 숫자 문자열일 때, ack(done) 후
+    device.state는 "on"이어야 한다 - command 문자열이 정확히 "on"과 같을 때만 켜짐으로 보면
+    밝기 값으로 켠 모든 경우가 "off"로 잘못 기록된다."""
+    device = client.post("/devices/mock-register", json={}).json()
+    headers = {"X-Device-Key": "test-device-key"}
+
+    client.post(f"/devices/{device['id']}/control", json={"command": "70"})
+    pending = client.get(f"/devices/{device['id']}/commands/pending", headers=headers).json()
+    command_id = pending[0]["id"]
+
+    res = client.post(
+        f"/devices/{device['id']}/commands/{command_id}/ack",
+        json={"status": "done"},
+        headers=headers,
+    )
+    assert res.status_code == 200
+
+    device_row = next(r for r in fake_supabase._data["devices"] if r["id"] == device["id"])
+    assert device_row["state"] == "on"

@@ -214,6 +214,8 @@ export type AppSettings = {
   goal_kwh: number | null;
   address: string;
   guidebook_font_size: FontSizeOption;
+  // 화재 위험 감지(고위험 기기/센서 급상승) 시 긴급 SMS를 받을 번호. 비어있으면 SMS를 안 보낸다.
+  emergency_phone: string;
 };
 
 export function getSettings(): Promise<AppSettings> {
@@ -306,4 +308,46 @@ export function startSleepRecord(sleepStartedAt: string): Promise<SleepRecord> {
 
 export function endSleepRecord(id: number, sleepEndedAt: string): Promise<SleepRecord> {
   return request(`/sleep/records/${id}`, { method: 'PATCH', body: JSON.stringify({ sleep_ended_at: sleepEndedAt }) });
+}
+
+// 기기 이상 패턴 감지(backend/app/anomaly/) - 학습된 사용 습관 대비 지금 상태의 점수/등급.
+// 실제 학습·판정은 전부 백엔드에서 하고(POST /devices/{id}/readings로 전력이 들어올 때마다),
+// 프런트는 이 결과만 주기적으로 읽어서 보여주고 등급에 맞는 알림/확인 흐름을 진행한다.
+export type AnomalyLevel = 'normal' | 'caution' | 'warning' | 'danger';
+export type AnomalyAction = 'none' | 'notify' | 'confirm_request' | 'auto_off_and_alert';
+
+export type AnomalyCondition = {
+  name: string;
+  triggered: boolean;
+  weight: number;
+  detail: string;
+};
+
+export type AnomalyStatus = {
+  device_id: string;
+  score: number;
+  level: AnomalyLevel;
+  action: AnomalyAction;
+  is_learning: boolean;
+  conditions: AnomalyCondition[];
+};
+
+export type AnomalyEvent = {
+  id: number;
+  device_id: string;
+  room_id: number | null;
+  score: number;
+  level: AnomalyLevel;
+  action: AnomalyAction;
+  reasons: string[];
+  created_at: string;
+};
+
+// 전력 측정 기기 전체의 이상 등급을 한 번에 받아온다(배치 조회 - 기기 수가 늘어도 요청은 하나).
+export function getAnomalyStatusList(): Promise<AnomalyStatus[]> {
+  return request<AnomalyStatus[]>('/anomaly');
+}
+
+export function getAnomalyEvents(limit = 20): Promise<AnomalyEvent[]> {
+  return request<AnomalyEvent[]>(`/anomaly/events?limit=${limit}`);
 }

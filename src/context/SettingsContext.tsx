@@ -28,6 +28,9 @@ type SettingsContextValue = {
   setAddress: (v: string) => void;
   guidebookFontSize: FontSizeOption;
   setGuidebookFontSize: (v: FontSizeOption) => void;
+  // 화재 위험(anomaly 엔진 "danger" 등급) 감지 시 긴급 SMS를 받을 번호. backend/app/services/sms_service.py 참고.
+  emergencyPhone: string;
+  setEmergencyPhone: (v: string) => void;
 };
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -35,6 +38,7 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [address, setAddressState] = useState('');
   const [guidebookFontSize, setGuidebookFontSizeState] = useState<FontSizeOption>('medium');
+  const [emergencyPhone, setEmergencyPhoneState] = useState('');
   const { pushNotification } = useNotifications();
   const notifySaveFailed = (what: string) =>
     pushNotification('저장 실패', `${what}이(가) 서버에 반영되지 않았어요. 다시 시도해 주세요.`);
@@ -45,6 +49,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         const settings = await api.getSettings();
         setAddressState(settings.address);
         setGuidebookFontSizeState(settings.guidebook_font_size);
+        setEmergencyPhoneState(settings.emergency_phone);
       } catch (err) {
         console.warn('설정 불러오기 실패(백엔드 연결을 확인하세요):', err);
       }
@@ -71,8 +76,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const setEmergencyPhone = (v: string) => {
+    const prev = emergencyPhone;
+    setEmergencyPhoneState(v);
+    rollbackOnFailure(
+      api.updateSettings({ emergency_phone: v }),
+      prev,
+      setEmergencyPhoneState,
+      '비상 연락처 저장',
+      () => notifySaveFailed('비상 연락처 저장')
+    );
+  };
+
   return (
-    <SettingsContext.Provider value={{ address, setAddress, guidebookFontSize, setGuidebookFontSize }}>
+    <SettingsContext.Provider
+      value={{ address, setAddress, guidebookFontSize, setGuidebookFontSize, emergencyPhone, setEmergencyPhone }}
+    >
       {children}
     </SettingsContext.Provider>
   );

@@ -1,5 +1,4 @@
-from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
@@ -10,6 +9,13 @@ from app.supabase_client import get_supabase
 router = APIRouter(tags=["energy"])
 
 KST = ZoneInfo("Asia/Seoul")
+
+# 기기가 몇 초~몇 분 간격으로 계속 전력값을 push하므로, 조회 기간을 안 잘라내면 기기 하나당
+# sensor_readings 행이 시간이 지날수록(기기/사용자 수와 무관하게 그냥 "서비스 운영 기간"에 비례해)
+# 계속 쌓여 이 쿼리가 점점 느려진다 - 실제로 화면에 보여주는 건 period별로 최근 몇 개 구간뿐이므로
+# (EnergyUsageScreen의 POINT_COUNT), 그보다 넉넉하게만 거슬러 올라가면 충분하다.
+# month는 "이번 달 대비 전월"(aggregateByMonth) 계산 때문에 최소 두 달치가 필요해서 더 넉넉히 잡는다.
+_LOOKBACK_DAYS: dict[Period, int] = {"day": 3, "month": 70, "year": 365 * 4}
 
 
 def _bucket_key(dt: datetime, period: Period) -> str:
@@ -35,13 +41,15 @@ def _power_monitor_devices() -> list[dict]:
     return res.data
 
 
-def _cumulative_readings(device_id: str) -> list[tuple[datetime, float]]:
+def _cumulative_readings(device_id: str, period: Period) -> list[tuple[datetime, float]]:
     supabase = get_supabase()
+    since = (datetime.now(timezone.utc) - timedelta(days=_LOOKBACK_DAYS[period])).isoformat()
     res = (
         supabase.table("sensor_readings")
         .select("value, recorded_at")
         .eq("device_id", device_id)
         .eq("metric", "energy_kwh")
+        .gte("recorded_at", since)
         .order("recorded_at", desc=False)
         .execute()
     )
@@ -78,10 +86,8 @@ def energy_usage(period: Period = Query("month")):
     devices = _power_monitor_devices()
 
     series: list[EnergySeries] = []
-    yearly_totals: dict[str, float] = defaultdict(float)
-
     for device in devices:
-        readings = _cumulative_readings(device["id"])
+        readings = _cumulative_readings(device["id"], period)
         usage = _bucket_usage(readings, period)
         series.append(
             EnergySeries(
@@ -94,16 +100,4 @@ def energy_usage(period: Period = Query("month")):
             )
         )
 
-        # 전년 대비(%) 계산은 선택된 period와 무관하게 항상 연 단위로 별도 집계
-        for year_key, val in _bucket_usage(readings, "year").items():
-            yearly_totals[year_key] += val
-
-    year_over_year_pct = None
-    years = sorted(yearly_totals.keys())
-    if len(years) >= 2:
-        prev_total, curr_total = yearly_totals[years[-2]], yearly_totals[years[-1]]
-        if prev_total > 0:
-            # 양수 = 작년보다 감소, 음수 = 증가 (프론트에서 부호 보고 라벨 결정)
-            year_over_year_pct = round((prev_total - curr_total) / prev_total * 100, 1)
-
-    return EnergyUsage(series=series, year_over_year_pct=year_over_year_pct)
+    return EnergyUsage(series=series)

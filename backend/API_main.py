@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import automation, devices, energy, notifications, rooms, schedule, settings, sleep
+from app.routers import anomaly, automation, devices, energy, notifications, rooms, schedule, settings, sleep
 
 app = FastAPI()
 
@@ -14,6 +14,7 @@ app.add_middleware(
 )
 
 app.include_router(devices.router)
+app.include_router(anomaly.router)
 app.include_router(rooms.router)
 app.include_router(energy.router)
 app.include_router(schedule.router)

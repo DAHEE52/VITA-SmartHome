@@ -3,11 +3,17 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header
 
+from app.anomaly.detector import RuleBasedAnomalyEngine
+from app.anomaly.store import evaluate_and_respond, ingest_power_reading
 from app.deps import verify_device_key
 from app.schemas import ClassifyIn, CommandAck, DeviceRegister, PendingCommand, ReadingsIn
 from app.supabase_client import get_supabase
 
 router = APIRouter(prefix="/devices", tags=["devices"])
+
+# anomaly.py 라우터와 별개 인스턴스지만 상태를 안 갖는 엔진이라 문제없다(판정에 필요한 값은
+# 전부 매 호출마다 evaluate_and_respond에 넘기는 컨텍스트에서 온다).
+_anomaly_engine = RuleBasedAnomalyEngine()
 
 
 def _now_iso() -> str:
@@ -69,6 +75,17 @@ def post_readings(device_id: str, body: ReadingsIn, x_device_key: str = Header(.
     if rows:
         supabase.table("sensor_readings").insert(rows).execute()
     supabase.table("devices").update({"last_seen_at": _now_iso()}).eq("id", device_id).execute()
+
+    # 전력 표본이 새로 들어올 때마다 학습(1~3단계)을 먼저 갱신한 뒤, 그 최신 상태로 판정(4~7단계)한다.
+    # 앱이 열려 있지 않아도 "위험" 등급이면 즉시 전원을 차단하기 위해 조회(GET /anomaly)가 아니라
+    # 여기(수신 시점)에서 실행한다.
+    power_readings = [r for r in body.readings if r.metric == "power_w"]
+    if power_readings:
+        now = datetime.now(timezone.utc)
+        for reading in power_readings:
+            ingest_power_reading(supabase, device_id, reading.value, now)
+        evaluate_and_respond(supabase, _anomaly_engine, device_id, now, power_readings[-1].value)
+
     return {"ok": True}
 
 
@@ -116,7 +133,9 @@ def ack_command(device_id: str, command_id: int, body: CommandAck, x_device_key:
     ).eq("id", command_id).execute()
 
     if body.status == "done":
-        new_state = "on" if cmd_res.data["command"] == "on" else "off"
+        # command는 "on"/"off" 외에 밝기 조명이면 "0"~"100" 숫자 문자열도 올 수 있다(rooms.py의
+        # control_device와 동일한 규칙) - "off"/"0"만 꺼짐이고, 그 외(밝기 값 포함)는 켜짐이다.
+        new_state = "off" if cmd_res.data["command"] in ("off", "0") else "on"
         supabase.table("devices").update({"state": new_state}).eq("id", device_id).execute()
 
     return {"ok": True}

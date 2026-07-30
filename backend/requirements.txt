@@ -6,6 +6,12 @@ supabase
 pydantic-settings
 tzdata
 
+# app/services/sms_service.py 전용 - 화재 위험(danger 등급) 감지 시 비상 연락처 SMS 발송에 쓴다.
+# .env에 SOLAPI_* 키가 없으면 이 패키지는 import조차 안 되지만(지연 import), 실제로 SMS 기능을
+# 켜려면(SOLAPI_API_KEY/SECRET/SENDER 설정) 설치돼 있어야 한다 - Lambda 배포 시
+# requirements-lambda.txt에도 반드시 같이 추가할 것.
+solapi
+
 # tapo_mqtt_publisher.py / tapo_mqtt_bridge.py 전용 (Tapo 스마트플러그를 라즈베리파이에서 쓸 때만 필요)
 python-dotenv
 # 0.9.0으로 고정 - tapo_mqtt_publisher.py의 discover_devices/DiscoveryResult 사용법이 이 버전의

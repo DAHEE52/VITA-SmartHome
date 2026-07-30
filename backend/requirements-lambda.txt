@@ -4,3 +4,6 @@ supabase
 pydantic-settings
 tzdata
 mangum
+# app/services/sms_service.py 전용 - 화재 위험 감지 SMS 발송(Solapi). devices.py의
+# POST /devices/{id}/readings에서 실제로 호출되므로 Lambda(백엔드 배포 대상)에도 필요하다.
+solapi

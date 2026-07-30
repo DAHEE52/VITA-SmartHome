@@ -6,7 +6,10 @@
 // 않으면 소비전력은 기본값(DEFAULT_WATT), 종류는 기기 이름 그대로로 폴백한다.
 const DEVICE_TYPES: { type: string; keywords: string[]; watt: number }[] = [
   { type: '에어컨', keywords: ['에어컨', '냉방'], watt: 1500 },
-  { type: '난방기기', keywords: ['난방', '히터', '온풍기', '전기장판'], watt: 1200 },
+  // fireRisk.ts의 HIGH_RISK_KEYWORDS(히터/전기장판/가스레인지/난로/온풍기)와 반드시 전부 겹쳐야 한다 -
+  // 하나라도 여기 없으면 그 기기는 이름만으로 종류를 못 알아채 getNormalDurationMs가 기본값(무제한)으로
+  // 빠져서, 고위험 기기인데도 "장시간 방치" 자동 차단 대상에서 빠지게 된다.
+  { type: '난방기기', keywords: ['난방', '히터', '온풍기', '전기장판', '가스레인지', '난로'], watt: 1200 },
   { type: '전자레인지', keywords: ['전자레인지'], watt: 1200 },
   { type: '세탁기', keywords: ['세탁기'], watt: 500 },
   { type: '건조기', keywords: ['건조기'], watt: 800 },

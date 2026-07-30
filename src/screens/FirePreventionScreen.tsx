@@ -15,7 +15,7 @@
 // 막음), "119 신고" 버튼은 전화 앱을 119가 입력된 채로 열어줄 뿐 - 실제 발신은 사용자가 통화 버튼을
 // 눌러야 이뤄진다.
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -111,23 +111,18 @@ function formatDuration(ms: number): string {
   return m > 0 ? `${m}분 ${s}초` : `${s}초`;
 }
 
-// 긴급 경보 카드 - 고위험 기기의 이상 패턴(장시간 방치)이 감지됐을 때만 뜬다.
-// "119 신고"는 전화 앱을 119가 입력된 채로 열어줄 뿐이고, 실제 발신은 사용자가 통화 버튼을 눌러야 한다.
-function EmergencyBanner({ reason, onDismiss }: { reason: string; onDismiss: () => void }) {
-  const callEmergency = () => {
-    Linking.openURL('tel:119');
-  };
-
+// 긴급 경보 카드 - 실제 응답(안전 확인/119 신고)은 MainScreen의 전역 팝업(FireEmergencyModal)에서
+// 처리하므로, 여기서는 지금 상황을 놓치지 않도록 알려주는 상태 표시만 한다(버튼 없음 - 중복 UI 방지).
+function EmergencyBanner({ reason, phase }: { reason: string; phase: 'confirming' | 'escalated' }) {
   return (
     <Card style={styles.emergencyCard}>
       <Text style={styles.emergencyTitle}>🚨 화재 위험 감지</Text>
       <Text style={styles.emergencyBody}>{reason}</Text>
-      <AnimatedPressable style={styles.emergencyCallButton} onPress={callEmergency} activeOpacity={0.7}>
-        <Text style={styles.emergencyCallButtonText}>📞 119 신고하기</Text>
-      </AnimatedPressable>
-      <AnimatedPressable style={styles.emergencyDismissButton} onPress={onDismiss} activeOpacity={0.7}>
-        <Text style={styles.emergencyDismissButtonText}>괜찮아요, 확인했어요</Text>
-      </AnimatedPressable>
+      <Text style={styles.emergencyHint}>
+        {phase === 'confirming'
+          ? '홈 화면 팝업에서 안전 여부를 확인해 주세요.'
+          : '비상 연락망에 알림을 보냈어요. 홈 화면 팝업에서 확인할 수 있어요.'}
+      </Text>
     </Card>
   );
 }
@@ -220,7 +215,7 @@ function RoomRiskCard({
 
 export default function FirePreventionScreen() {
   const { rooms } = useRooms();
-  const { autoActions, emergency, dismissEmergency } = useFireSafety();
+  const { autoActions, emergency } = useFireSafety();
   const { readings, isSimulatingFire, simulateFire, clearSimulation, getTemperatureRiseC } = useSensors();
   const [now, setNow] = useState(() => Date.now());
 
@@ -254,7 +249,7 @@ export default function FirePreventionScreen() {
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false}>
-        {emergency && <EmergencyBanner reason={emergency.reason} onDismiss={dismissEmergency} />}
+        {emergency && <EmergencyBanner reason={emergency.reason} phase={emergency.phase} />}
 
         <Card style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>전체 상태</Text>
@@ -281,8 +276,10 @@ export default function FirePreventionScreen() {
         <Text style={styles.sectionTitle}>방별 화재 감지 센서</Text>
         <Text style={styles.sectionHint}>
           방마다 온도·습도 센서 값을 보여줘요. 절대 온도 임계치뿐 아니라 5분 내 {RISE_DANGER_DELTA_C}℃ 이상
-          급상승도 위험으로 감지해요. 아직 실제 센서가 연결되지 않아 지금은 더미 값으로 채워지고 있고,
-          실제 센서가 연동되면 이 값이 그대로 실제 값으로 바뀌어요.
+          급상승도 "위험"으로 표시해요. 다만 실제 비상 알림(전원 차단·안전 확인·비상 연락망 알림)은
+          온도가 위험 범위여도 PIR 센서로 최근에 사람 움직임이 감지됐으면 오탐 방지를 위해 보내지
+          않고, 일정 시간 움직임이 없을 때만 발동해요. 아직 실제 센서가 연결되지 않아 지금은 더미
+          값으로 채워지고 있고, 실제 센서가 연동되면 이 값이 그대로 실제 값으로 바뀌어요.
         </Text>
         {rooms.length > 0 ? (
           rooms.map((room) => (
@@ -373,29 +370,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.white,
     lineHeight: 18,
-    marginBottom: 14,
   },
-  emergencyCallButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: colors.white,
-    marginBottom: 8,
-  },
-  emergencyCallButtonText: {
-    fontFamily: fonts.jalnan,
-    fontSize: 15,
-    color: colors.red,
-  },
-  emergencyDismissButton: {
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  emergencyDismissButtonText: {
-    fontFamily: fonts.jalnan,
-    fontSize: 13,
+  emergencyHint: {
+    marginTop: 10,
+    fontSize: 12,
     color: colors.white,
-    textDecorationLine: 'underline',
+    opacity: 0.85,
+    lineHeight: 17,
   },
 
   summaryCard: {

@@ -122,7 +122,6 @@ class EnergySeries(BaseModel):
 
 class EnergyUsage(BaseModel):
     series: list[EnergySeries]
-    year_over_year_pct: Optional[float]
 
 
 SpecialKind = Literal["general", "outing", "overnight"]
@@ -186,6 +185,8 @@ class AppSettingsOut(BaseModel):
     goal_kwh: Optional[float] = None
     address: str
     guidebook_font_size: FontSizeOption
+    # 화재 위험 감지(고위험 기기/센서 급상승) 시 긴급 SMS를 받을 번호. 비어있으면 SMS를 안 보낸다.
+    emergency_phone: str = ""
 
 
 class AppSettingsUpdate(BaseModel):
@@ -193,6 +194,7 @@ class AppSettingsUpdate(BaseModel):
     goal_kwh: Optional[float] = None
     address: Optional[str] = None
     guidebook_font_size: Optional[FontSizeOption] = None
+    emergency_phone: Optional[str] = None
 
 
 class AutomationRuleCreate(BaseModel):
@@ -257,3 +259,34 @@ class ClassifyIn(BaseModel):
     model: Literal["life_pattern"]
     label: str
     confidence: Optional[float] = None
+
+
+AnomalyLevel = Literal["normal", "caution", "warning", "danger"]
+AnomalyAction = Literal["none", "notify", "confirm_request", "auto_off_and_alert"]
+
+
+class AnomalyConditionOut(BaseModel):
+    name: str
+    triggered: bool
+    weight: int
+    detail: str
+
+
+class AnomalyStatusOut(BaseModel):
+    device_id: str
+    score: int
+    level: AnomalyLevel
+    action: AnomalyAction
+    is_learning: bool
+    conditions: list[AnomalyConditionOut]
+
+
+class AnomalyEventOut(BaseModel):
+    id: int
+    device_id: str
+    room_id: Optional[int] = None
+    score: int
+    level: AnomalyLevel
+    action: AnomalyAction
+    reasons: list[str]
+    created_at: str

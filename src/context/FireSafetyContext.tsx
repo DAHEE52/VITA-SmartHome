@@ -4,36 +4,50 @@
 // 감지되면 그 자리에서 바로 대응한다.
 //
 // 감지는 두 갈래다.
-// 1) 기기 이상 패턴: RoomsContext의 실제 기기 on/off 지속시간을 근거로 판단하는 규칙 기반 시뮬레이션.
+// 1) 기기 이상 패턴: backend/app/anomaly/(학습된 사용 습관 대비 전력/사용시간/재실/온도/급변/시간대
+//    6개 조건 점수화)가 실제 판정을 전부 서버에서 수행한다 - 이 Context는 GET /anomaly를 주기적으로
+//    조회해서 결과(등급별 알림/재알림/기록)만 반영한다. "위험" 등급의 전원 자동 차단 + 비상 연락처
+//    SMS는 서버가 전력 표본을 받는 즉시(앱이 열려 있지 않아도) 이미 실행한 뒤이므로, 여기서는 그
+//    사실을 알리고 로컬 기기 상태(RoomsContext)만 따라서 꺼진 것으로 동기화한다.
 // 2) 온도/습도 센서 + PIR 무움직임: SensorContext의 온도/습도(지금은 더미, 나중에 실제 센서로
 //    교체될 값)와 /home/summary의 PIR 최근 움직임 시각을 함께 본다 - 온도가 위험 범위여도 최근에
 //    움직임이 있었으면(사람이 요리 중 등 정상 상황일 가능성) 화재 의심으로 올리지 않는다
 //    (utils/fireRisk.ts의 isFireSuspected, 오탐 방지 로직).
 //
-// 두 갈래 모두 감지되면: 1) 즉시 긴급 푸시 알림 + 전원 자동 차단, 2) confirmWaitSeconds(기본 45초)
-// 동안 사용자의 "안전해요" 확인을 기다리는 'confirming' 상태로 들어간다. 그 안에 사용자가 확인하면
-// 오탐으로 해제되고, 시간 안에 응답이 없으면 'escalated' 상태로 넘어가 등록된 비상 연락처
-// (EmergencyContactsContext)에 알림을 보낸 것으로 기록한다 - 실제 SMS 발송 API 연동 전이라, 문자를
-// 실제로 대신 보내주지는 못하고(운영체제가 앱의 임의 자동 발신을 막음), 119 신고와 같은 방식으로
-// 알림 기록 + 원터치 전화 연결까지만 이 앱이 할 수 있는 전부다. 119 자동 신고는 절대 하지 않는다 -
-// "119 신고" 버튼을 누르면 전화 앱이 119가 입력된 채로 열리는 데까지만 앱이 관여한다.
+// 2번(센서 기반) 갈래가 감지되면: 1) 즉시 긴급 푸시 알림 + 전원 자동 차단, 2) confirmWaitSeconds
+// (기본 45초) 동안 사용자의 "안전해요" 확인을 기다리는 'confirming' 상태로 들어간다. 그 안에
+// 사용자가 확인하면 오탐으로 해제되고, 시간 안에 응답이 없으면 'escalated' 상태로 넘어가 등록된
+// 비상 연락처(EmergencyContactsContext)에 알림을 보낸 것으로 기록한다 - 실제 SMS 발송 API 연동
+// 전이라, 문자를 실제로 대신 보내주지는 못하고(운영체제가 앱의 임의 자동 발신을 막음), 119 신고와
+// 같은 방식으로 알림 기록 + 원터치 전화 연결까지만 이 앱이 할 수 있는 전부다. 119 자동 신고는
+// 절대 하지 않는다 - "119 신고" 버튼을 누르면 전화 앱이 119가 입력된 채로 열리는 데까지만 관여한다.
+// (1번 갈래인 기기 이상 패턴은 서버가 "위험" 등급에서 실제 SMS까지 이미 보내므로 별도의
+// confirm/escalate 단계가 필요 없다 - app/anomaly/detector.py의 7단계 참고.)
 import React, { createContext, useContext, useState, useRef, useEffect, ReactNode } from 'react';
-import { useRooms } from './RoomsContext';
+import { useRooms, Room } from './RoomsContext';
 import { useNotifications } from './NotificationsContext';
 import { useSensors } from './SensorContext';
 import { useEmergencyContacts } from './EmergencyContactsContext';
 import * as api from '../api/client';
-import {
-  isAnomalousDevice,
-  isHighRiskDevice,
-  isFireSuspected,
-  FIRE_NO_MOTION_MINUTES,
-} from '../utils/fireRisk';
+import { AnomalyLevel, AnomalyStatus } from '../api/client';
+import { isFireSuspected, FIRE_NO_MOTION_MINUTES } from '../utils/fireRisk';
 
-const CHECK_INTERVAL_MS = 5000; // 5초마다 모든 기기/센서의 이상 여부를 검사한다.
+const CHECK_INTERVAL_MS = 5000; // 5초마다 센서 기반 화재 감지를 검사한다.
 const MOTION_POLL_MS = 10000; // SleepContext와 같은 주기로 /home/summary의 최근 움직임 시각을 갱신한다.
+const ANOMALY_POLL_MS = 15000; // 기기 이상 패턴(GET /anomaly)을 조회하는 주기.
 // 스펙의 "사용자는 30~60초 내에 '안전' 버튼을 눌러 오탐 여부를 확인" 범위의 중간값.
 export const FIRE_CONFIRM_WAIT_SECONDS = 45;
+// 스펙 7단계 "경고 등급 - 30초 이내 응답 없으면 한 번 더 알림"과 맞춘다
+// (backend/app/anomaly/constants.py의 WARNING_REPROMPT_WAIT_SEC와 동일한 값).
+const WARNING_REPROMPT_WAIT_MS = 30000;
+
+function findDeviceById(rooms: Room[], deviceId: string) {
+  for (const room of rooms) {
+    const device = room.devices.find((d) => d.id === deviceId);
+    if (device) return { roomId: room.id, device };
+  }
+  return null;
+}
 
 export type AutoAction = {
   id: string;
@@ -64,6 +78,8 @@ type FireSafetyContextValue = {
   confirmSafe: () => void;
   // "확인했어요" - escalated 상태의 배너/모달을 닫는다(이미 비상 연락망에 알림을 보낸 뒤).
   dismissEmergency: () => void;
+  // GET /anomaly의 최신 결과 - FirePreventionScreen의 "AI 이상 패턴 감지" 목록이 그대로 보여준다.
+  anomalyStatuses: AnomalyStatus[];
 };
 
 const FireSafetyContext = createContext<FireSafetyContextValue | null>(null);
@@ -82,6 +98,7 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
   const [autoActions, setAutoActions] = useState<AutoAction[]>([]);
   const [emergency, setEmergency] = useState<EmergencyEvent | null>(null);
   const [lastMotionAtMs, setLastMotionAtMs] = useState<number>(0);
+  const [anomalyStatuses, setAnomalyStatuses] = useState<AnomalyStatus[]>([]);
 
   // setInterval 콜백이 항상 최신 값을 보도록 ref로 들고 있는다(타이머를 매번 새로 만들지 않기 위함).
   const roomsRef = useRef(rooms);
@@ -108,6 +125,11 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
   // (안전/주의로 돌아와야) 다음 위험 전환에서 다시 울리도록 방별로 기록해 둔다.
   const alertedRoomsRef = useRef<Set<string>>(new Set());
 
+  // 기기별 "마지막으로 통보한 이상 등급" - 매 poll(15초)마다 반복 알리지 않고, 등급이 실제로
+  // 바뀐 순간(edge)에만 알린다. 경고 등급 재알림 타이머도 기기별로 따로 관리한다.
+  const lastAnomalyLevelRef = useRef<Record<string, AnomalyLevel>>({});
+  const warningRepromptTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
   // PIR 최근 움직임 시각(/home/summary.last_motion_at) - SleepContext와 동일한 방식으로 갱신한다.
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +144,82 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
     };
     poll();
     const timer = setInterval(poll, MOTION_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // 기기 이상 패턴(GET /anomaly) - 실제 학습/판정/"위험" 등급의 자동 차단+SMS는 전부 서버가 전력
+  // 표본을 받는 즉시 처리해두므로, 여기서는 그 결과를 주기적으로 읽어와 등급이 바뀐 기기에만
+  // 등급별 행동(7단계)을 취한다. 같은 등급이 계속 유지되는 동안은 매 poll마다 반복하지 않는다.
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      api
+        .getAnomalyStatusList()
+        .then((statuses) => {
+          if (cancelled) return;
+          setAnomalyStatuses(statuses);
+
+          for (const status of statuses) {
+            const prevLevel = lastAnomalyLevelRef.current[status.device_id];
+            lastAnomalyLevelRef.current[status.device_id] = status.level;
+            if (status.is_learning || status.level === prevLevel) continue;
+
+            const found = findDeviceById(roomsRef.current, status.device_id);
+            const roomLabel = found ? roomsRef.current.find((r) => r.id === found.roomId)?.label ?? '' : '';
+            const deviceLabel = found ? `"${found.device.name}"` : status.device_id;
+            const reasonText = status.conditions
+              .filter((c) => c.triggered)
+              .map((c) => c.detail)
+              .join(' · ');
+
+            if (status.level === 'caution') {
+              pushNotificationRef.current(
+                '⚠️ 기기 사용 패턴 주의',
+                `${deviceLabel} 평소와 다른 사용 패턴이 감지됐어요. (${reasonText})`
+              );
+            } else if (status.level === 'warning') {
+              pushNotificationRef.current(
+                '🔶 기기 이상 패턴 확인 필요',
+                `${deviceLabel}에서 이상 패턴이 감지됐어요. 확인해 주세요. (${reasonText})`
+              );
+              // 30초 안에 다시 확인해서, 그때도 여전히 경고 등급이면 한 번 더 알린다(스펙 7단계).
+              const deviceId = status.device_id;
+              clearTimeout(warningRepromptTimersRef.current[deviceId]);
+              warningRepromptTimersRef.current[deviceId] = setTimeout(() => {
+                if (lastAnomalyLevelRef.current[deviceId] === 'warning') {
+                  pushNotificationRef.current(
+                    '🔶 다시 알려드려요',
+                    `${deviceLabel} 이상 패턴이 아직 확인되지 않았어요. 스마트홈 제어에서 상태를 봐주세요.`
+                  );
+                }
+              }, WARNING_REPROMPT_WAIT_MS);
+            } else if (status.level === 'danger') {
+              const message = found
+                ? `"${found.device.name}"에서 위험 수준의 이상 패턴이 감지되어 전원을 자동 차단하고 비상 연락처로 알렸어요. (${reasonText})`
+                : `이상 패턴이 감지되어 전원을 자동 차단하고 비상 연락처로 알렸어요. (${reasonText})`;
+              pushNotificationRef.current('🚨 기기 이상 패턴 자동 차단', message);
+              setAutoActions((prev) => [
+                {
+                  id: `action-${Date.now()}-${status.device_id}`,
+                  time: formatClock(new Date()),
+                  roomLabel,
+                  deviceName: found?.device.name ?? status.device_id,
+                  message,
+                },
+                ...prev,
+              ].slice(0, 20));
+              // 서버가 이미 전원을 껐으므로, 로컬 화면(스마트홈 제어 등)도 같은 상태로 맞춘다.
+              if (found) forceOffDeviceRef.current(found.roomId, found.device.name);
+            }
+          }
+        })
+        .catch((err) => console.warn('기기 이상 패턴 조회 실패:', err));
+    };
+    poll();
+    const timer = setInterval(poll, ANOMALY_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -144,41 +242,6 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
       const now = Date.now();
 
       for (const room of roomsRef.current) {
-        for (const device of room.devices) {
-          if (!isAnomalousDevice(device, now)) continue;
-
-          // 이상 패턴 감지 → 자동으로 전원 차단.
-          forceOffDeviceRef.current(room.id, device.name);
-
-          const highRisk = isHighRiskDevice(device.name);
-          const message = highRisk
-            ? `🚨 "${device.name}"(${room.label}) 장시간 사용이 감지되어 화재 위험으로 판단, 전원을 자동 차단했어요.`
-            : `⚡ "${device.name}"(${room.label}) 장시간 사용 패턴이 감지되어 전원을 자동 차단했어요.`;
-
-          pushNotificationRef.current(highRisk ? '🚨 화재 위험 자동 차단' : '⚡ 기기 자동 차단', message);
-
-          setAutoActions((prev) => [
-            {
-              id: `action-${now}-${room.id}-${device.name}`,
-              time: formatClock(new Date(now)),
-              roomLabel: room.label,
-              deviceName: device.name,
-              message,
-            },
-            ...prev,
-          ].slice(0, 20)); // 최근 20건만 보관
-
-          if (highRisk) {
-            raiseEmergency({
-              roomLabel: room.label,
-              deviceName: device.name,
-              reason: `${room.label}의 "${device.name}"에서 장시간 방치로 인한 화재 위험이 감지되어 전원을 자동 차단했어요.`,
-              temperatureC: null,
-              detectedAt: now,
-            });
-          }
-        }
-
         // 온도/습도 센서 + PIR 무움직임 기반 판정. 원인 기기를 특정할 수 없으므로 방 전체를 차단한다.
         const reading = readingsRef.current[room.id];
         const riseC = getTemperatureRiseCRef.current(room.id);
@@ -262,8 +325,19 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
 
   const dismissEmergency = () => setEmergency(null);
 
+  // 언마운트 시 대기 중인 경고 재알림 타이머를 전부 정리한다(FireSafetyProvider는 App.tsx에서
+  // 앱 생명주기 내내 한 번만 마운트되므로 실제로는 거의 발생하지 않지만, 누수 방지용).
+  useEffect(() => {
+    const timers = warningRepromptTimersRef.current;
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
+
   return (
-    <FireSafetyContext.Provider value={{ autoActions, emergency, confirmSafe, dismissEmergency }}>
+    <FireSafetyContext.Provider
+      value={{ autoActions, emergency, confirmSafe, dismissEmergency, anomalyStatuses }}
+    >
       {children}
     </FireSafetyContext.Provider>
   );

@@ -68,6 +68,14 @@ class _QueryBuilder:
         self._filters.append(("like", col, pattern))
         return self
 
+    def gte(self, col, val):
+        self._filters.append(("gte", col, val))
+        return self
+
+    def lte(self, col, val):
+        self._filters.append(("lte", col, val))
+        return self
+
     def order(self, col, desc=False):
         self._order = (col, desc)
         return self
@@ -81,6 +89,10 @@ class _QueryBuilder:
             if kind == "eq" and row.get(col) != val:
                 return False
             if kind == "in" and row.get(col) not in val:
+                return False
+            if kind == "gte" and not (row.get(col) is not None and row.get(col) >= val):
+                return False
+            if kind == "lte" and not (row.get(col) is not None and row.get(col) <= val):
                 return False
             if kind == "like":
                 # SQL LIKE의 %를 정규식 .*로만 바꿔서 지원(현재 쓰이는 접두사 패턴 기준으로 충분).
@@ -169,6 +181,6 @@ def client(fake_supabase):
     with patch("app.routers.rooms.get_supabase", return_value=fake_supabase), patch(
         "app.routers.devices.get_supabase", return_value=fake_supabase
     ), patch("app.routers.energy.get_supabase", return_value=fake_supabase), patch(
-        "app.deps.get_supabase", return_value=fake_supabase
-    ):
+        "app.routers.anomaly.get_supabase", return_value=fake_supabase
+    ), patch("app.deps.get_supabase", return_value=fake_supabase):
         yield TestClient(app)

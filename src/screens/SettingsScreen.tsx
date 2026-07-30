@@ -14,11 +14,17 @@ const SCREEN_PADDING = 20;
 const FONT_SIZE_OPTIONS: FontSizeOption[] = ['small', 'medium', 'large'];
 
 export default function SettingsScreen() {
-  const { address, setAddress, guidebookFontSize, setGuidebookFontSize } = useSettings();
+  const { address, setAddress, guidebookFontSize, setGuidebookFontSize, emergencyPhone, setEmergencyPhone } =
+    useSettings();
   const [addressDraft, setAddressDraft] = useState(address);
+  const [emergencyPhoneDraft, setEmergencyPhoneDraft] = useState(emergencyPhone);
 
   const saveAddress = () => {
     setAddress(addressDraft.trim());
+  };
+
+  const saveEmergencyPhone = () => {
+    setEmergencyPhone(emergencyPhoneDraft.trim());
   };
 
   return (
@@ -49,6 +55,34 @@ export default function SettingsScreen() {
             <Text style={styles.addressSavedText}>등록된 주소: {address}</Text>
           ) : (
             <Text style={styles.addressHint}>등록된 주소가 없어요.</Text>
+          )}
+        </Card>
+
+        <Card style={styles.card}>
+          <Text style={styles.cardTitle}>🚨 화재 위험 비상 연락처</Text>
+          <Text style={styles.cardSubtitle}>
+            화재 위험(전원 자동 차단)이 감지되면 이 번호로 긴급 SMS를 보내요. 비워두면 문자는 안
+            가고 앱 알림만 떠요.
+          </Text>
+          <View style={styles.addressRow}>
+            <TextInput
+              style={styles.addressInput}
+              value={emergencyPhoneDraft}
+              onChangeText={(v) => setEmergencyPhoneDraft(v.replace(/[^0-9]/g, ''))}
+              placeholder="01012345678"
+              placeholderTextColor={colors.textGray}
+              keyboardType="number-pad"
+              onSubmitEditing={saveEmergencyPhone}
+              returnKeyType="done"
+            />
+            <AnimatedPressable style={styles.saveButton} onPress={saveEmergencyPhone} activeOpacity={0.7}>
+              <Text style={styles.saveButtonText}>등록</Text>
+            </AnimatedPressable>
+          </View>
+          {emergencyPhone ? (
+            <Text style={styles.addressSavedText}>등록된 번호: {emergencyPhone}</Text>
+          ) : (
+            <Text style={styles.addressHint}>등록된 번호가 없어요.</Text>
           )}
         </Card>
 

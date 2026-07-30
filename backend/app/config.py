@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +10,13 @@ class Settings(BaseSettings):
     # DEVICE_API_KEY는 여기서 안 읽는다 - app/deps.py의 verify_device_key가 기기별 개별 키를
     # DB(devices.device_key)에서 직접 확인하기 때문. .env의 DEVICE_API_KEY는 이제 "새 기기가
     # 처음 등록할 때 들고 오는 초기 키"로서 firmware config.h 쪽에서만 의미가 있다.
+
+    # app/services/sms_service.py 전용 - 화재 위험("danger" 등급) 감지 시 비상 연락처로 SMS를
+    # 보낼 때 쓴다. 셋 다 없으면 SMS 발송 자체를 조용히 건너뛴다(자동 전원 차단은 그대로 동작) -
+    # 키를 아직 안 받았거나 로컬 개발 중에도 서버가 죽지 않게 하기 위해 전부 Optional로 둔다.
+    solapi_api_key: Optional[str] = None
+    solapi_api_secret: Optional[str] = None
+    solapi_sender: Optional[str] = None
 
     # .env 하나를 tapo_mqtt_publisher.py/tapo_mqtt_bridge.py(TAPO_*, MQTT_*, API_BASE_URL 등)와
     # 공유해서 쓰는 배포가 흔하다(예: 라즈베리파이 한 대에서 백엔드+Tapo 브릿지를 같이 돌리는 경우).

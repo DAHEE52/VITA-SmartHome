@@ -109,9 +109,27 @@ create table if not exists app_settings (
   goal_kwh double precision,
   address text not null default '',
   guidebook_font_size text not null default 'medium' check (guidebook_font_size in ('small', 'medium', 'large')),
+  emergency_phone text not null default '',
   constraint app_settings_singleton check (id = 1)
 );
 insert into app_settings (id) values (1) on conflict (id) do nothing;
+
+-- 마이그레이션: 화재 위험 감지 SMS 알림(emergency_phone) 도입 전 기존 프로젝트용.
+-- 새 프로젝트에서는 위 create table에 이미 포함되므로 그냥 no-op.
+alter table app_settings add column if not exists emergency_phone text not null default '';
+
+-- 화재 위험 감지 SMS 발송 이력 - app/routers/alerts.py가 사용. 실패 건도 남겨서 나중에
+-- "왜 문자가 안 왔지"를 디버깅할 수 있게 한다. status='sent'인 가장 최근 행의 created_at을
+-- 기준으로 5분 내 중복 발송을 막는다(alerts.py의 DEDUP_WINDOW_MINUTES).
+create table if not exists sms_log (
+  id bigserial primary key,
+  phone text not null,
+  message text not null,
+  status text not null check (status in ('sent', 'failed')),
+  detail text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_sms_log_created on sms_log(created_at desc);
 
 -- 자동화 규칙 - AutomationScreen/AutomationContext가 사용.
 -- trigger/action은 종류가 다양해서(외출/외박/루틴/재실 트리거 x 기기on/off/온도설정/재실온도 액션)
@@ -176,3 +194,47 @@ create table if not exists classification_events (
   recorded_at timestamptz not null default now()
 );
 create index if not exists idx_classification_device_time on classification_events(device_id, recorded_at desc);
+
+-- 기기 이상 패턴 감지(app/anomaly/) - 기기별 학습된 사용 습관(평균/분산/모드)과 최근 이상 감지
+-- 이벤트를 저장한다. 통계는 Welford 온라인 알고리즘으로 표본 하나씩 갱신되므로(app/anomaly/models.py
+-- RunningStats), 원시 값 자체가 아니라 {count, mean, m2, minimum, maximum} 요약만 jsonb로 저장한다.
+
+-- 기기 하나의 전체 학습 상태 - 1단계(14일 학습)에서 쌓이는 원시 통계 + 진행 중인 사용 세션.
+create table if not exists device_learning_profile (
+  device_id text primary key references devices(id) on delete cascade,
+  learning_started_at timestamptz not null default now(),
+  power_stats jsonb not null default '{"count":0,"mean":0,"m2":0,"minimum":null,"maximum":null}',
+  duration_stats jsonb not null default '{"count":0,"mean":0,"m2":0,"minimum":null,"maximum":null}',
+  hourly_frequency jsonb not null default '[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]',
+  power_history jsonb not null default '[]',
+  session_started_at timestamptz,
+  session_power_sum double precision not null default 0,
+  session_power_count int not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+-- 2/3단계에서 전력값을 기준으로 자동 분류된 사용 모드(예: "500W대"/"1500W대") - 기기당 여러 행.
+create table if not exists device_usage_mode (
+  id bigserial primary key,
+  device_id text not null references devices(id) on delete cascade,
+  mode_index int not null,
+  power_stats jsonb not null default '{"count":0,"mean":0,"m2":0,"minimum":null,"maximum":null}',
+  duration_stats jsonb not null default '{"count":0,"mean":0,"m2":0,"minimum":null,"maximum":null}',
+  updated_at timestamptz not null default now(),
+  unique (device_id, mode_index)
+);
+create index if not exists idx_device_usage_mode_device on device_usage_mode(device_id);
+
+-- 4~7단계에서 계산된 이상 감지 결과 로그(점수/등급/조치/사유) - FirePreventionScreen의
+-- "자동 대응 기록"과 같은 역할의 감사 기록이다. normal 등급은 기록하지 않는다(store.py 참고).
+create table if not exists device_anomaly_event (
+  id bigserial primary key,
+  device_id text not null references devices(id) on delete cascade,
+  room_id bigint references rooms(id) on delete set null,
+  score int not null,
+  level text not null check (level in ('normal', 'caution', 'warning', 'danger')),
+  action text not null,
+  reasons jsonb not null default '[]',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_device_anomaly_event_device on device_anomaly_event(device_id, created_at desc);
