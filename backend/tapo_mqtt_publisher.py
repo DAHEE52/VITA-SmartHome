@@ -30,8 +30,7 @@ import os
 
 import aiomqtt
 from dotenv import load_dotenv
-from tapo import ApiClient
-from tapo.discovery_result import DiscoveryResult
+from tapo import ApiClient, DiscoveryResult
 
 load_dotenv()
 
@@ -66,7 +65,7 @@ async def discover_once(tapo_client: ApiClient, mqtt: aiomqtt.Client):
     """로컬 네트워크에서 Tapo 스마트플러그를 찾아 known_devices에 채우고 발견 사실을 publish한다.
     조명/허브/카메라 등 플러그가 아닌 기종은 이 브릿지의 범위 밖이라 건너뛴다."""
     try:
-        async for maybe_result in tapo_client.discover_devices(DISCOVERY_TARGET):
+        async for maybe_result in await tapo_client.discover_devices(DISCOVERY_TARGET):
             try:
                 result = maybe_result.get()
             except Exception as err:
