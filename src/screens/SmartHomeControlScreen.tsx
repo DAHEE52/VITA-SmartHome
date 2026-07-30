@@ -256,6 +256,7 @@ function DeviceSettingsModal({
   onRename,
   onToggleMode,
   onTogglePower,
+  onSetBrightness,
   onDisconnect,
 }: {
   device: Device | null;
@@ -264,6 +265,7 @@ function DeviceSettingsModal({
   onRename: (roomId: string, deviceId: string, name: string) => void;
   onToggleMode: (roomId: string, deviceId: string) => void;
   onTogglePower: (roomId: string, deviceId: string) => void;
+  onSetBrightness: (roomId: string, deviceId: string, brightness: number) => void;
   onDisconnect: (roomId: string, deviceId: string) => void;
 }) {
   const [nameInput, setNameInput] = useState('');
@@ -392,6 +394,35 @@ function DeviceSettingsModal({
                 </View>
               </View>
 
+              {/* PWM 밝기 조절이 되는 조명(env_power_hub_node의 living-light-01)만 노출 - 다른
+                  기기(Tapo 콘센트 등)는 on/off만 지원하므로 밝기 명령을 보내면 안 된다. */}
+              {device?.id === 'living-light-01' && device?.mode === 'manual' && (
+                <View style={styles.deviceRow}>
+                  <Text style={styles.deviceName}>밝기</Text>
+                  <View style={styles.deviceControls}>
+                    <AnimatedPressable
+                      style={styles.modeToggle}
+                      onPress={() =>
+                        roomId && device && onSetBrightness(roomId, device.id, Math.max(0, device.brightness - 10))
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.modeToggleText}>−</Text>
+                    </AnimatedPressable>
+                    <Text style={styles.deviceName}>{device.brightness}%</Text>
+                    <AnimatedPressable
+                      style={styles.modeToggle}
+                      onPress={() =>
+                        roomId && device && onSetBrightness(roomId, device.id, Math.min(100, device.brightness + 10))
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.modeToggleText}>＋</Text>
+                    </AnimatedPressable>
+                  </View>
+                </View>
+              )}
+
               <AnimatedPressable
                 style={styles.disconnectButton}
                 onPress={() => setConfirmDisconnect(true)}
@@ -420,7 +451,8 @@ export default function SmartHomeControlScreen() {
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
   // 정확히 정사각형이 되도록 %/aspectRatio 대신 실제 픽셀 크기를 계산해서 쓴다.
   const cellSize = (width - SCREEN_PADDING * 2 - GRID_GAP) / 2;
-  const { rooms, connectDevice, renameDevice, deleteDevice, toggleDeviceMode, toggleDevicePower } = useRooms();
+  const { rooms, connectDevice, renameDevice, deleteDevice, toggleDeviceMode, toggleDevicePower, setDeviceBrightness } =
+    useRooms();
   const room = rooms[0] ?? null;
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [settingsDeviceId, setSettingsDeviceId] = useState<string | null>(null);
@@ -458,6 +490,7 @@ export default function SmartHomeControlScreen() {
         onRename={renameDevice}
         onToggleMode={toggleDeviceMode}
         onTogglePower={toggleDevicePower}
+        onSetBrightness={setDeviceBrightness}
         onDisconnect={deleteDevice}
       />
       <ConnectDeviceModal

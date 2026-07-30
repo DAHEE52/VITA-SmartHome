@@ -1,19 +1,20 @@
-// 환경/전력 센서 허브 (보드 1 - 브레드보드_최종배치_v4.md): XIAO ESP32S3 +
-// BME280(온습도) + BH1750(조도) + PZEM-004T v3(전력).
-// 온습도/조도는 living-env-01, 전력은 living-power-01 두 device_id로 각각 등록해서
-// 5초마다 FastAPI로 push한다(앱 폴링 주기와 맞춤).
+// 환경/조명 허브 (보드 1 - 브레드보드_최종배치_v4.md): XIAO ESP32S3 +
+// BME280(온습도) + BH1750(조도) + LED(조명 채널, 저항 직결).
+// 온습도/조도는 living-env-01로 5초마다 push하고, LED 조명은 living-light-01(relay)로
+// 등록해서 2.5초마다 대기 명령을 poll한다. 조명은 PWM(ledcWrite)으로 밝기(0~100%)까지 조절된다.
 //
 // 필요 라이브러리 (Arduino Library Manager에서 설치):
 //   - Adafruit BME280 Library (+ Adafruit Unified Sensor, Adafruit BusIO)
 //   - BH1750 (Christopher Laws)
-//   - PZEM004Tv30 (Jakub Mandula / mandulaj)
 //   - ArduinoJson (v7)
 //
 // 배선(브레드보드_최종배치_v4.md 기준):
 //   - I2C(BME280/BH1750): Wire.begin() 기본 핀(D4=SDA, D5=SCL) 공유
-//   - PZEM: HardwareSerial(1), MCU RX=D2(PZEM TX 수신), MCU TX=D3(PZEM RX로 송신)
+//   - LED 조명: D1 -> 저항 -> LED -> GND
+//     GPIO를 HIGH로 주면 켜지는 active-HIGH 구성(옵토릴레이와 반대이니 혼동 주의).
+//     원래 D2를 썼으나 D2(GPIO3)가 스트래핑 핀이라 출력이 불안정해 D1로 변경함.
 //
-// !!! 안전 경고 !!! PZEM-004T는 AC 전원선에 직결된다. 절연 인클로저 안에서 작업할 것.
+// 전력 측정(PZEM)은 Tapo 스마트플러그로 대체되어 이 보드에서는 더 이상 쓰지 않는다.
 
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -22,21 +23,21 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <BH1750.h>
-#include <PZEM004Tv30.h>
 
 #include "config.h"
 
 static const unsigned long PUSH_INTERVAL_MS = 5000;
+static const unsigned long LIGHT_POLL_INTERVAL_MS = 2500;
+static const int LIGHT_PIN = D1;  // D2(GPIO3)는 스트래핑 핀이라 출력이 불안정할 수 있어 D1로 변경
 
 Adafruit_BME280 bme;
 BH1750 lightMeter;
-HardwareSerial pzemSerial(1);
-PZEM004Tv30 pzem(pzemSerial, /*RX*/ D2, /*TX*/ D3);
 
 bool bmeReady = false;
 bool bhReady = false;
 
 unsigned long lastPushMs = 0;
+unsigned long lastLightPollMs = 0;
 
 void connectWiFi() {
   WiFi.mode(WIFI_STA);
@@ -77,7 +78,7 @@ void registerDevice(const char *deviceId, const char *type, const char *labelSuf
   Serial.println(status);
 }
 
-// PZEM은 결선이 안 됐거나 읽기 실패 시 NAN을 반환하므로, 값이 있을 때만 배열에 추가한다.
+// PZEM 등 결선이 안 됐거나 읽기 실패 시 NAN을 반환하는 값이 있을 때만 배열에 추가한다.
 void addIfValid(JsonArray &readings, const char *metric, float value) {
   if (isnan(value)) {
     return;
@@ -108,29 +109,68 @@ void pushEnvReadings() {
   Serial.println(status);
 }
 
-void pushPowerReadings() {
+void ackCommand(long commandId, const String &status) {
   JsonDocument doc;
-  JsonArray readings = doc["readings"].to<JsonArray>();
+  doc["status"] = status;
+  postJson(String("/devices/") + LIGHT_DEVICE_ID + "/commands/" + commandId + "/ack", doc);
+}
 
-  addIfValid(readings, "voltage", pzem.voltage());
-  addIfValid(readings, "current", pzem.current());
-  addIfValid(readings, "power_w", pzem.power());
-  // energy()는 카운터 리셋 이후 누적 kWh. /energy/usage가 이 값을 구간별로 차분해서 사용량을 계산한다.
-  addIfValid(readings, "energy_kwh", pzem.energy());
+// command는 "on"/"off" 또는 밝기 문자열("0"~"100")이다 - 숫자면 그대로 밝기(%)로 쓰고,
+// on=100%/off=0%로 변환한다. PWM 듀티(0~255)로 환산해 ledcWrite한다.
+void applyLightCommand(const String &command) {
+  int brightnessPct;
+  if (command == "on") {
+    brightnessPct = 100;
+  } else if (command == "off") {
+    brightnessPct = 0;
+  } else {
+    brightnessPct = command.toInt();
+  }
+  brightnessPct = constrain(brightnessPct, 0, 100);
 
-  if (readings.size() == 0) {
-    Serial.println("PZEM 값을 읽지 못함 (배선/전원 확인 필요) - 이번 주기는 전송 생략");
+  int duty = map(brightnessPct, 0, 100, 0, 255);
+  ledcWrite(LIGHT_PIN, duty);
+  Serial.print("조명 밝기 적용: ");
+  Serial.println(brightnessPct);
+}
+
+void pollLightCommands() {
+  HTTPClient http;
+  http.begin(String(API_BASE_URL) + "/devices/" + LIGHT_DEVICE_ID + "/commands/pending");
+  http.addHeader("X-Device-Key", DEVICE_KEY);
+
+  int status = http.GET();
+  if (status != 200) {
+    http.end();
     return;
   }
 
-  int status = postJson(String("/devices/") + POWER_DEVICE_ID + "/readings", doc);
-  Serial.print("power readings 응답 코드: ");
-  Serial.println(status);
+  String payload = http.getString();
+  http.end();
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, payload);
+  if (err) {
+    Serial.print("명령 파싱 실패: ");
+    Serial.println(err.c_str());
+    return;
+  }
+
+  // created_at 오름차순으로 오므로 순서대로 적용하면 가장 최근 의도가 최종 반영된다.
+  for (JsonObject item : doc.as<JsonArray>()) {
+    long id = item["id"].as<long>();
+    String command = item["command"].as<String>();
+    applyLightCommand(command);
+    ackCommand(id, "done");
+  }
 }
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  ledcAttach(LIGHT_PIN, 5000, 8);  // 5kHz, 8bit(0~255) - 밝기 조절(PWM)용
+  ledcWrite(LIGHT_PIN, 0);  // 시작은 꺼진 상태로
 
   Wire.begin();
 
@@ -149,9 +189,7 @@ void setup() {
 
   connectWiFi();
   registerDevice(ENV_DEVICE_ID, "env_sensor", "온습도/조도 센서");
-  // 전력 측정은 Tapo P110M 스마트플러그(라즈베리파이의 tapo_power_bridge.py)로 대체되어
-  // PZEM push는 중단한다. PZEM 배선/코드 자체는 남겨뒀으니 필요하면 아래 두 줄만 되살리면 된다.
-  // registerDevice(POWER_DEVICE_ID, "power_monitor", "전력 측정");
+  registerDevice(LIGHT_DEVICE_ID, "relay", "조명");
 }
 
 void loop() {
@@ -163,9 +201,13 @@ void loop() {
 
   if (millis() - lastPushMs >= PUSH_INTERVAL_MS) {
     pushEnvReadings();
-    // pushPowerReadings();  // Tapo P110M으로 대체 - 위 setup() 주석 참고
     lastPushMs = millis();
   }
 
-  delay(200);
+  if (millis() - lastLightPollMs >= LIGHT_POLL_INTERVAL_MS) {
+    pollLightCommands();
+    lastLightPollMs = millis();
+  }
+
+  delay(100);
 }

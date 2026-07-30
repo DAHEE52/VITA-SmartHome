@@ -113,7 +113,11 @@ export function getRoomsStatus(): Promise<RoomStatus[]> {
   return request<RoomStatus[]>('/rooms/status');
 }
 
-export function controlDevice(deviceId: string, command: 'on' | 'off'): Promise<{ ok: boolean; state: string }> {
+// 'on'/'off' 외에, 밝기 조절이 되는 조명은 "0"~"100" 문자열도 보낼 수 있다(backend/app/schemas.py 참고).
+export function controlDevice(
+  deviceId: string,
+  command: 'on' | 'off' | string
+): Promise<{ ok: boolean; state: string }> {
   return request(`/devices/${deviceId}/control`, {
     method: 'POST',
     body: JSON.stringify({ command }),
