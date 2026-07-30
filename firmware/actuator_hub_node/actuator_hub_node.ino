@@ -6,12 +6,13 @@
 // 필요 라이브러리 (Arduino Library Manager): ArduinoJson (v7)
 //
 // 배선(브레드보드_최종배치_v4.md 기준):
-//   D1 = PIR OUT, D2 = 릴레이 IN1, D3 = 릴레이 IN2, D6 = 릴레이 IN3, D7 = 릴레이 IN4
+//   D1 = PIR OUT, D2 = 채널1(조명 LED 직결), D3 = 릴레이 IN2, D6 = 릴레이 IN3, D7 = 릴레이 IN4
 //   (D4/D5는 INA219용으로 예약 - 이번 스케치에서는 사용 안 함)
 //
-// 배선 주의: 릴레이 코일측은 보통 별도 5V(XIAO의 VUSB/5V 핀, USB 급전 시에만 살아있음)가
-// 필요하고, 옵토릴레이 보드의 극성(active-high/low)은 config.h의 RELAY_ACTIVE_LEVEL로
-// 반드시 실측 확인 후 설정할 것.
+// 각 채널의 "active level"(HIGH가 켜짐인지 LOW가 켜짐인지)은 채널마다 다를 수 있다 -
+// GPIO에 저항+LED를 직결하면 GPIO를 HIGH로 줄 때 켜지고(active-HIGH), 옵토릴레이 모듈은
+// 대부분 반대로 LOW를 줘야 켜진다(active-LOW). 그래서 채널별로 config.h에서 따로
+// RELAY*_ACTIVE_LEVEL을 설정한다 - 실제 배선을 보고 맞춰야지, 기본값을 그대로 믿지 말 것.
 
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -26,13 +27,14 @@ static const unsigned long RELAY_POLL_INTERVAL_MS = 2500;
 struct RelayChannel {
   int pin;
   const char *deviceId;
+  bool activeLevel;  // true=HIGH일 때 켜짐(예: LED 직결), false=LOW일 때 켜짐(예: 옵토릴레이)
 };
 
 RelayChannel relays[] = {
-  {D2, RELAY1_DEVICE_ID},
-  {D3, RELAY2_DEVICE_ID},
-  {D6, RELAY3_DEVICE_ID},
-  {D7, RELAY4_DEVICE_ID},
+  {D2, RELAY1_DEVICE_ID, RELAY1_ACTIVE_LEVEL},
+  {D3, RELAY2_DEVICE_ID, RELAY2_ACTIVE_LEVEL},
+  {D6, RELAY3_DEVICE_ID, RELAY3_ACTIVE_LEVEL},
+  {D7, RELAY4_DEVICE_ID, RELAY4_ACTIVE_LEVEL},
 };
 static const int RELAY_COUNT = sizeof(relays) / sizeof(relays[0]);
 
@@ -93,9 +95,9 @@ void pushMotion() {
 
 void applyCommand(const RelayChannel &relay, const String &command) {
   bool on = command == "on";
-  digitalWrite(relay.pin, on ? RELAY_ACTIVE_LEVEL : !RELAY_ACTIVE_LEVEL);
+  digitalWrite(relay.pin, on ? relay.activeLevel : !relay.activeLevel);
   Serial.print(relay.deviceId);
-  Serial.print(" 릴레이 적용: ");
+  Serial.print(" 채널 적용: ");
   Serial.println(command);
 }
 
@@ -141,7 +143,7 @@ void setup() {
   pinMode(PIR_PIN, INPUT);
   for (int i = 0; i < RELAY_COUNT; i++) {
     pinMode(relays[i].pin, OUTPUT);
-    digitalWrite(relays[i].pin, !RELAY_ACTIVE_LEVEL);  // 시작은 꺼진 상태로
+    digitalWrite(relays[i].pin, !relays[i].activeLevel);  // 시작은 꺼진 상태로
   }
 
   connectWiFi();

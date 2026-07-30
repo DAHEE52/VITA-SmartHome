@@ -1,17 +1,16 @@
 // 환경/전력 센서 허브 (보드 1 - 브레드보드_최종배치_v4.md): XIAO ESP32S3 +
-// BME280(온습도) + BH1750(조도) + SSD1306 OLED(로컬 표시) + PZEM-004T v3(전력).
+// BME280(온습도) + BH1750(조도) + PZEM-004T v3(전력).
 // 온습도/조도는 living-env-01, 전력은 living-power-01 두 device_id로 각각 등록해서
-// 30초마다 FastAPI로 push한다. OLED는 서버로 보내지 않고 보드에서 로컬로만 보여준다.
+// 5초마다 FastAPI로 push한다(앱 폴링 주기와 맞춤).
 //
 // 필요 라이브러리 (Arduino Library Manager에서 설치):
 //   - Adafruit BME280 Library (+ Adafruit Unified Sensor, Adafruit BusIO)
 //   - BH1750 (Christopher Laws)
-//   - Adafruit SSD1306 (+ Adafruit GFX Library)
 //   - PZEM004Tv30 (Jakub Mandula / mandulaj)
 //   - ArduinoJson (v7)
 //
 // 배선(브레드보드_최종배치_v4.md 기준):
-//   - I2C(BME280/OLED/BH1750): Wire.begin() 기본 핀(D4=SDA, D5=SCL) 공유
+//   - I2C(BME280/BH1750): Wire.begin() 기본 핀(D4=SDA, D5=SCL) 공유
 //   - PZEM: HardwareSerial(1), MCU RX=D2(PZEM TX 수신), MCU TX=D3(PZEM RX로 송신)
 //
 // !!! 안전 경고 !!! PZEM-004T는 AC 전원선에 직결된다. 절연 인클로저 안에서 작업할 것.
@@ -23,27 +22,21 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <BH1750.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 #include <PZEM004Tv30.h>
 
 #include "config.h"
 
-static const unsigned long PUSH_INTERVAL_MS = 30000;
-static const unsigned long OLED_REFRESH_MS = 2000;
+static const unsigned long PUSH_INTERVAL_MS = 5000;
 
 Adafruit_BME280 bme;
 BH1750 lightMeter;
-Adafruit_SSD1306 display(128, 64, &Wire, -1);
 HardwareSerial pzemSerial(1);
 PZEM004Tv30 pzem(pzemSerial, /*RX*/ D2, /*TX*/ D3);
 
 bool bmeReady = false;
 bool bhReady = false;
-bool oledReady = false;
 
 unsigned long lastPushMs = 0;
-unsigned long lastOledMs = 0;
 
 void connectWiFi() {
   WiFi.mode(WIFI_STA);
@@ -136,34 +129,6 @@ void pushPowerReadings() {
   Serial.println(status);
 }
 
-void refreshOled(float tempC, float humidity, float lux) {
-  if (!oledReady) {
-    return;
-  }
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println(ROOM " 환경센서");
-  display.println();
-  if (bmeReady) {
-    display.print("Temp: ");
-    display.print(tempC, 1);
-    display.println(" C");
-    display.print("Humi: ");
-    display.print(humidity, 1);
-    display.println(" %");
-  } else {
-    display.println("BME280 없음");
-  }
-  if (bhReady) {
-    display.print("Light: ");
-    display.print(lux, 0);
-    display.println(" lx");
-  }
-  display.display();
-}
-
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -183,17 +148,11 @@ void setup() {
     Serial.println("BH1750을 찾지 못함 (0x23)");
   }
 
-  oledReady = display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  if (!oledReady) {
-    Serial.println("OLED(SSD1306)를 찾지 못함 (0x3C)");
-  } else {
-    display.clearDisplay();
-    display.display();
-  }
-
   connectWiFi();
   registerDevice(ENV_DEVICE_ID, "env_sensor", "온습도/조도 센서");
-  registerDevice(POWER_DEVICE_ID, "power_monitor", "전력 측정");
+  // 전력 측정은 Tapo P110M 스마트플러그(라즈베리파이의 tapo_power_bridge.py)로 대체되어
+  // PZEM push는 중단한다. PZEM 배선/코드 자체는 남겨뒀으니 필요하면 아래 두 줄만 되살리면 된다.
+  // registerDevice(POWER_DEVICE_ID, "power_monitor", "전력 측정");
 }
 
 void loop() {
@@ -203,18 +162,9 @@ void loop() {
     return;
   }
 
-  float tempC = bmeReady ? bme.readTemperature() : NAN;
-  float humidity = bmeReady ? bme.readHumidity() : NAN;
-  float lux = bhReady ? lightMeter.readLightLevel() : NAN;
-
-  if (millis() - lastOledMs >= OLED_REFRESH_MS) {
-    refreshOled(tempC, humidity, lux);
-    lastOledMs = millis();
-  }
-
   if (millis() - lastPushMs >= PUSH_INTERVAL_MS) {
     pushEnvReadings();
-    pushPowerReadings();
+    // pushPowerReadings();  // Tapo P110M으로 대체 - 위 setup() 주석 참고
     lastPushMs = millis();
   }
 
