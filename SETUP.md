@@ -84,6 +84,75 @@ curl http://localhost:8000/rooms/status
 
 세 개 다 정상 JSON이 나오고 Supabase 테이블에 row가 보이면 백엔드 쪽은 끝난 것이다.
 
+## 7. (선택) 라즈베리파이에서 상시 실행
+
+노트북을 계속 켜두지 않아도 되도록, 백엔드를 라즈베리파이에서 systemd 서비스로 돌릴 수 있다.
+
+```bash
+# 라즈베리파이에 backend/ 전체(venv 제외)를 복사한 뒤
+cd ~/vita-backend
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+```
+
+`/etc/systemd/system/vita-backend.service`:
+
+```ini
+[Unit]
+Description=VITA SmartHome FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<사용자명>
+WorkingDirectory=/home/<사용자명>/vita-backend
+ExecStart=/home/<사용자명>/vita-backend/venv/bin/python -m uvicorn API_main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now vita-backend.service
+```
+
+이후 `firmware/*/config.h`의 `API_BASE_URL`을 라즈베리파이의 LAN IP로 바꾸면 ESP32 노드들이 여기로 push한다.
+
+### Tapo 스마트플러그로 전력 측정 (PZEM 대신)
+
+AC 배선(PZEM) 대신 완제품 스마트플러그(TP-Link Tapo 등)로 전력을 측정하려면 `backend/tapo_power_bridge.py`를 쓴다. `.env.example`의 `TAPO_*` 값을 채운 뒤, Tapo 앱에서 **나 > 제3자 서비스 > 제3자 호환성**을 켜고(안 켜면 "Unsupported device" 에러) 아래처럼 서비스로 등록한다:
+
+```ini
+# /etc/systemd/system/tapo-power-bridge.service
+[Unit]
+Description=VITA Tapo power bridge
+After=network-online.target vita-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<사용자명>
+WorkingDirectory=/home/<사용자명>/vita-backend
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/<사용자명>/vita-backend/venv/bin/python tapo_power_bridge.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now tapo-power-bridge.service
+```
+
+`living-smartplug-01`(power_monitor)로 등록되어 5초마다 `power_w`를 push한다.
+
 ## 알아둘 점
 
 - **무료 플랜은 약 1주일 비활성 시 자동 일시정지된다.** 실제 시연/발표 전에 Supabase 대시보드에 접속해서 프로젝트가 paused 상태가 아닌지 미리 확인할 것.

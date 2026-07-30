@@ -150,7 +150,9 @@ void setup() {
 
   connectWiFi();
   registerDevice(ENV_DEVICE_ID, "env_sensor", "온습도/조도 센서");
-  registerDevice(POWER_DEVICE_ID, "power_monitor", "전력 측정");
+  // 전력 측정은 Tapo P110M 스마트플러그(라즈베리파이의 tapo_power_bridge.py)로 대체되어
+  // PZEM push는 중단한다. PZEM 배선/코드 자체는 남겨뒀으니 필요하면 아래 두 줄만 되살리면 된다.
+  // registerDevice(POWER_DEVICE_ID, "power_monitor", "전력 측정");
 }
 
 void loop() {
@@ -162,7 +164,7 @@ void loop() {
 
   if (millis() - lastPushMs >= PUSH_INTERVAL_MS) {
     pushEnvReadings();
-    pushPowerReadings();
+    // pushPowerReadings();  // Tapo P110M으로 대체 - 위 setup() 주석 참고
     lastPushMs = millis();
   }
 
