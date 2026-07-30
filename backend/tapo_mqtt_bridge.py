@@ -66,10 +66,10 @@ async def handle_mqtt_messages(mqtt: aiomqtt.Client, http: httpx.AsyncClient):
                 print(f"[{device_id}] 등록 응답 코드:", resp.status_code)
 
         elif kind == "power":
-            resp = await http.post(
-                f"/devices/{device_id}/readings",
-                json={"readings": [{"metric": "power_w", "value": body["power_w"]}]},
-            )
+            readings = [{"metric": "power_w", "value": body["power_w"]}]
+            if "energy_kwh" in body:
+                readings.append({"metric": "energy_kwh", "value": body["energy_kwh"]})
+            resp = await http.post(f"/devices/{device_id}/readings", json={"readings": readings})
             if resp.status_code != 200:
                 print(f"[{device_id}] readings 응답 코드:", resp.status_code)
 

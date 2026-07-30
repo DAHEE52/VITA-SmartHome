@@ -9,7 +9,14 @@ Tapo<->MQTT 구간을 두기 위한 구조 - CLAUDE.md의 "펌웨어는 순수 H
 
 토픽 구조 (전부 JSON payload):
   vita/tapo/{device_id}/discovered      (retained) {"type", "label", "on"} - 기기가 검색될 때마다
-  vita/tapo/{device_id}/power                      {"power_w"} - 전력 측정 기종만, POLL_INTERVAL_SEC마다
+  vita/tapo/{device_id}/power                      {"power_w", "energy_kwh"} - 전력 측정 기종만,
+                                                    POLL_INTERVAL_SEC마다. energy_kwh는 기기 자체
+                                                    누적값(하루/한달 단위로 리셋됨, PZEM 같은 진짜
+                                                    수명 카운터가 아님)을 안 쓰고, 이 스크립트가 매
+                                                    조회마다 power_w를 구간 적분해서 직접 만든 리셋
+                                                    없는 누적치다 - 백엔드의 /energy/usage가 "구간
+                                                    diff로 사용량 계산"을 전제하므로(년 단위 버킷도
+                                                    있음) 리셋되는 값을 그대로 쓰면 년 집계가 깨진다.
   vita/tapo/{device_id}/command                    {"command_id", "command"} - bridge가 발행, 이 스크립트가 구독
   vita/tapo/{device_id}/command_result             {"command_id", "status"} - 명령 실행 후 이 스크립트가 발행
 
@@ -27,6 +34,7 @@ systemd로 상시 실행하는 예시는 SETUP.md 참고.
 import asyncio
 import json
 import os
+import time
 
 import aiomqtt
 from dotenv import load_dotenv
@@ -76,7 +84,13 @@ async def discover_once(tapo_client: ApiClient, mqtt: aiomqtt.Client):
                 case DiscoveryResult.PlugEnergyMonitoring(device_info, handler):
                     device_id = _device_id_for(device_info.device_id)
                     is_new = device_id not in known_devices
-                    known_devices[device_id] = {"handler": handler, "type": "power_monitor"}
+                    # energy_kwh/last_sample_mono(적산 전력량 상태)는 재검색 때마다 지우면 안 되므로
+                    # 기존 값이 있으면 유지하고 handler/type만 최신으로 덮어쓴다.
+                    known_devices[device_id] = {
+                        **known_devices.get(device_id, {}),
+                        "handler": handler,
+                        "type": "power_monitor",
+                    }
                     if is_new:
                         print(f"새 스마트플러그(전력측정) 발견: {device_id} ({device_info.nickname})")
                     await publish_discovered(
@@ -103,14 +117,26 @@ async def discovery_loop(tapo_client: ApiClient, mqtt: aiomqtt.Client):
 
 async def poll_power_readings(mqtt: aiomqtt.Client):
     while True:
+        now_mono = time.monotonic()
         for device_id, info in list(known_devices.items()):
             if info["type"] != "power_monitor":
                 continue
             try:
                 power = await info["handler"].get_current_power()
+
+                # 이전 샘플 이후 경과 시간 동안 이 순간 전력이 유지됐다고 보고 사다리꼴 대신
+                # 직사각형 적분(순간전력 x 경과시간)으로 kWh를 누적한다 - PZEM의 실측 적산과
+                # 달리 근사치지만, 폴링 주기(POLL_INTERVAL_SEC)가 짧아 오차가 작다.
+                info.setdefault("energy_kwh", 0.0)
+                last_mono = info.get("last_sample_mono")
+                if last_mono is not None:
+                    elapsed_hours = (now_mono - last_mono) / 3600
+                    info["energy_kwh"] += (power.current_power / 1000) * elapsed_hours
+                info["last_sample_mono"] = now_mono
+
                 await mqtt.publish(
                     f"vita/tapo/{device_id}/power",
-                    payload=json.dumps({"power_w": power.current_power}),
+                    payload=json.dumps({"power_w": power.current_power, "energy_kwh": round(info["energy_kwh"], 6)}),
                 )
             except Exception as err:  # noqa: BLE001 - 다음 주기에 재시도
                 print(f"[{device_id}] 전력 조회 실패(다음 주기에 재시도):", err)
