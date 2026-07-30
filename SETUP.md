@@ -122,9 +122,9 @@ sudo systemctl enable --now vita-backend.service
 
 이후 `firmware/*/config.h`의 `API_BASE_URL`을 라즈베리파이의 LAN IP로 바꾸면 ESP32 노드들이 여기로 push한다.
 
-### Tapo 스마트플러그로 전력 측정 (PZEM 대신)
+### Tapo 스마트플러그로 전력 측정 + 원격 제어 (PZEM/릴레이 대신)
 
-AC 배선(PZEM) 대신 완제품 스마트플러그(TP-Link Tapo 등)로 전력을 측정하려면 `backend/tapo_power_bridge.py`를 쓴다. `.env.example`의 `TAPO_*` 값을 채운 뒤, Tapo 앱에서 **나 > 제3자 서비스 > 제3자 호환성**을 켜고(안 켜면 "Unsupported device" 에러) 아래처럼 서비스로 등록한다:
+AC 배선(PZEM/릴레이)을 직접 다루는 대신 완제품 스마트플러그(TP-Link Tapo P100/P105/P110/P110M/P115)를 쓰려면 `backend/tapo_power_bridge.py`를 쓴다. `.env.example`의 `TAPO_*` 값을 채운 뒤, Tapo 앱에서 **나 > 제3자 서비스 > 제3자 호환성**을 켜고(안 켜면 "Unsupported device" 에러) 아래처럼 서비스로 등록한다. IP를 직접 알아낼 필요는 없다 - 브릿지가 30초마다 같은 네트워크를 검색해서 새로 켜진 Tapo 플러그를 자동으로 찾아 등록한다. 등록된 기기는 앱의 "스마트홈 제어 > 스마트 플러그 연결(+)" 목록에 바로 나타나고, 3초마다 앱에서 내려온 on/off 명령도 실행한다(전력 측정이 되는 P110 계열은 실시간 W도 같이 push).
 
 ```ini
 # /etc/systemd/system/tapo-power-bridge.service
@@ -151,7 +151,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now tapo-power-bridge.service
 ```
 
-`living-smartplug-01`(power_monitor)로 등록되어 5초마다 `power_w`를 push한다.
+발견된 플러그마다 `tapo-<기기ID>`로 자동 등록된다 - 전력 측정이 되는 기종(P110/P110M/P115)은 `power_monitor`, 안 되는 기종(P100/P105)은 `relay` 타입으로 등록된다.
 
 ## 알아둘 점
 

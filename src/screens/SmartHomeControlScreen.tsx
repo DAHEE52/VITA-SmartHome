@@ -159,25 +159,34 @@ function AddDeviceButton({ scale, cellSize, onPress }: { scale: number; cellSize
 }
 
 // "+" 버튼을 누르면 뜨는 창 - 근처에서 통신 중인(이미 서버에 자기소개를 마쳤지만 아직 방에 안 묶인)
-// 스마트 플러그 목록을 보여주고, 각 항목의 "연결" 버튼을 누르면 그 자리에서 연결된다. 이름은 여기서
-// 정하지 않고, 연결 후 화면에 나타난 카드를 눌러서 따로 정한다.
+// 스마트 플러그 목록을 보여준다. Tapo 브릿지(backend/tapo_power_bridge.py)가 발견한 Tapo 플러그도
+// 같은 방식(자동 register)으로 여기 나타나므로 ESP32 기기와 동일하게 취급된다.
+// 목록에서 기기를 탭하면: 1) 그 자리에서 연결하고 2) 곧바로 이름 설정 단계로 넘어가서, 사용자가
+// "이름 없는 기기를 눌러서 연결 → 나중에 카드 찾아서 이름 바꾸기" 두 단계를 거칠 필요 없이
+// 한 흐름으로 끝낸다. 이름을 저장하면 목록으로 돌아가 다른 기기를 이어서 추가할 수 있다.
 function ConnectDeviceModal({
   visible,
   roomId,
   onClose,
   onConnect,
+  onRename,
 }: {
   visible: boolean;
   roomId: string | null;
   onClose: () => void;
   onConnect: (roomId: string, deviceId: string) => void;
+  onRename: (roomId: string, deviceId: string, name: string) => void;
 }) {
   const [nearby, setNearby] = useState<api.DeviceOut[]>([]);
   const [connectedIds, setConnectedIds] = useState<Set<string>>(new Set());
+  // 방금 연결해서 이름을 정하는 중인 기기 - null이 아니면 목록 대신 이름 설정 화면을 보여준다.
+  const [namingDevice, setNamingDevice] = useState<api.DeviceOut | null>(null);
+  const [nameInput, setNameInput] = useState('');
 
   useEffect(() => {
     if (!visible) return;
     setConnectedIds(new Set());
+    setNamingDevice(null);
     api
       .getUnassignedDevices()
       .then(setNearby)
@@ -191,49 +200,86 @@ function ConnectDeviceModal({
     if (!roomId || connectedIds.has(device.id)) return;
     onConnect(roomId, device.id);
     setConnectedIds((prev) => new Set(prev).add(device.id));
+    setNamingDevice(device);
+    setNameInput(device.label ?? device.id);
+  };
+
+  const handleSaveName = () => {
+    if (roomId && namingDevice && nameInput.trim()) {
+      onRename(roomId, namingDevice.id, nameInput.trim());
+    }
+    setNamingDevice(null);
   };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => {}}>
-          <Text style={styles.modalTitle}>스마트 플러그 연결</Text>
-          <Text style={styles.deviceSectionHint}>
-            {nearby.length > 0
-              ? '통신 중인 스마트 플러그예요. 연결할 기기를 골라주세요.'
-              : '근처에서 통신 중인 스마트 플러그가 없어요. 전원을 확인해 주세요.'}
-          </Text>
+          {namingDevice ? (
+            <>
+              <Text style={styles.modalTitle}>연결됐어요!</Text>
+              <Text style={styles.deviceSectionHint}>바로 사용할 이름을 정해주세요.</Text>
+              <View style={styles.renameRow}>
+                <TextInput
+                  style={styles.renameInput}
+                  value={nameInput}
+                  onChangeText={setNameInput}
+                  onSubmitEditing={handleSaveName}
+                  placeholder="기기 이름"
+                  placeholderTextColor={colors.textGray}
+                  returnKeyType="done"
+                  autoFocus
+                />
+              </View>
+              <AnimatedPressable
+                style={[styles.saveNameButton, styles.modalCloseButtonSolo]}
+                onPress={handleSaveName}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.renameSaveText}>저장하고 계속 추가</Text>
+              </AnimatedPressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.modalTitle}>스마트 플러그 연결</Text>
+              <Text style={styles.deviceSectionHint}>
+                {nearby.length > 0
+                  ? '통신 중인 스마트 플러그예요. 연결할 기기를 골라주세요.'
+                  : '근처에서 통신 중인 스마트 플러그가 없어요. 전원을 확인해 주세요.'}
+              </Text>
 
-          <ScrollView style={styles.nearbyList}>
-            {nearby.map((d) => {
-              const connected = connectedIds.has(d.id);
-              return (
-                <View key={d.id} style={styles.nearbyRow}>
-                  <Text style={styles.nearbyLabel} numberOfLines={1}>
-                    {d.label ?? d.id}
-                  </Text>
-                  <AnimatedPressable
-                    style={[styles.connectButton, connected && styles.connectButtonDone]}
-                    onPress={() => handleConnect(d)}
-                    activeOpacity={0.7}
-                    disabled={connected}
-                  >
-                    <Text style={[styles.connectButtonText, connected && styles.connectButtonTextDone]}>
-                      {connected ? '연결됨' : '연결'}
-                    </Text>
-                  </AnimatedPressable>
-                </View>
-              );
-            })}
-          </ScrollView>
+              <ScrollView style={styles.nearbyList}>
+                {nearby.map((d) => {
+                  const connected = connectedIds.has(d.id);
+                  return (
+                    <View key={d.id} style={styles.nearbyRow}>
+                      <Text style={styles.nearbyLabel} numberOfLines={1}>
+                        {d.label ?? d.id}
+                      </Text>
+                      <AnimatedPressable
+                        style={[styles.connectButton, connected && styles.connectButtonDone]}
+                        onPress={() => handleConnect(d)}
+                        activeOpacity={0.7}
+                        disabled={connected}
+                      >
+                        <Text style={[styles.connectButtonText, connected && styles.connectButtonTextDone]}>
+                          {connected ? '연결됨' : '연결'}
+                        </Text>
+                      </AnimatedPressable>
+                    </View>
+                  );
+                })}
+              </ScrollView>
 
-          <AnimatedPressable
-            style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.modalCloseText}>닫기</Text>
-          </AnimatedPressable>
+              <AnimatedPressable
+                style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
+                onPress={onClose}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modalCloseText}>닫기</Text>
+              </AnimatedPressable>
+            </>
+          )}
         </Pressable>
       </Pressable>
     </Modal>
@@ -461,6 +507,7 @@ export default function SmartHomeControlScreen() {
         roomId={room?.id ?? null}
         onClose={() => setConnectModalOpen(false)}
         onConnect={connectDevice}
+        onRename={renameDevice}
       />
     </SafeAreaView>
   );
@@ -624,6 +671,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.jalnan,
     fontSize: 14,
     color: colors.white,
+  },
+  // "기기 연결" 직후 이름 설정 화면의 저장 버튼 - modalCloseButtonSolo와 짝지어 폭 전체를 채운다.
+  saveNameButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.orange,
   },
   tempLabel: {
     fontFamily: fonts.jalnan,
