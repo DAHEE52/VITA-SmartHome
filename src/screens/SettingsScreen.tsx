@@ -100,13 +100,16 @@ export default function SettingsScreen() {
 
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>🛏 취침 모드 설정</Text>
-          <Text style={styles.cardSubtitle}>취침 감지 조건과 취침 모드로 전환될 기기를 설정해요.</Text>
+          <Text style={styles.cardSubtitle}>
+            취침 감지 조건과 취침 모드로 전환될 기기는 자동화 규칙 화면의 "🛏 취침 모드" 버튼에서
+            설정해요.
+          </Text>
           <AnimatedPressable
             style={styles.linkButton}
-            onPress={() => navigation.navigate('SleepMode')}
+            onPress={() => navigation.navigate('Automation')}
             activeOpacity={0.7}
           >
-            <Text style={styles.linkButtonText}>취침 모드 관리로 이동</Text>
+            <Text style={styles.linkButtonText}>자동화 규칙으로 이동</Text>
           </AnimatedPressable>
         </Card>
 

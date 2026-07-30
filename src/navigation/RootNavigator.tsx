@@ -17,7 +17,6 @@ import BillReceiptScreen from '../screens/BillReceiptScreen';
 import FirePreventionScreen from '../screens/FirePreventionScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AutomationScreen from '../screens/AutomationScreen';
-import SleepModeScreen from '../screens/SleepModeScreen';
 import SleepStatsScreen from '../screens/SleepStatsScreen';
 
 // 각 화면이 받는 파라미터 타입 정의. 전부 파라미터 없이 이동하므로 undefined.
@@ -34,7 +33,6 @@ export type RootStackParamList = {
   FirePrevention: undefined;
   Settings: undefined;
   Automation: undefined;
-  SleepMode: undefined;
   SleepStats: undefined;
 };
 
@@ -60,7 +58,6 @@ export default function RootNavigator() {
         <Stack.Screen name="FirePrevention" component={FirePreventionScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen name="Automation" component={AutomationScreen} />
-        <Stack.Screen name="SleepMode" component={SleepModeScreen} />
         <Stack.Screen name="SleepStats" component={SleepStatsScreen} />
       </Stack.Navigator>
     </NavigationContainer>

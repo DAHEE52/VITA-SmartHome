@@ -111,8 +111,8 @@ export function SleepProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // preset.devices에 등록된 기기들을 각자 지정된 on/off 상태로 맞춘다(사용자가 SleepModeScreen에서
-  // 직접 고른 기기와 목표 상태). invert=true면 그 반대로 맞춘다 - 기상 시 취침 모드가 바꿔놓은
+  // preset.devices에 등록된 기기들을 각자 지정된 on/off 상태로 맞춘다(사용자가 자동화 규칙
+  // 화면의 "🛏 취침 모드" 버튼에서 직접 고른 기기와 목표 상태). invert=true면 그 반대로 맞춘다 - 기상 시 취침 모드가 바꿔놓은
   // 상태를 되돌리는 용도.
   const applySleepDevices = (invert: boolean) => {
     const p = presetRef.current;

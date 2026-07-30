@@ -590,6 +590,7 @@ export default function AutomationScreen() {
 
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [sleepModalOpen, setSleepModalOpen] = useState(false);
 
   const roomFor = (roomId: string) => rooms.find((r) => r.id === roomId);
 
@@ -605,6 +606,17 @@ export default function AutomationScreen() {
         contentContainerStyle={styles.contentInner}
         showsVerticalScrollIndicator={false}
       >
+        <AnimatedPressable activeOpacity={0.85} onPress={() => setSleepModalOpen(true)}>
+          <Card style={styles.sleepButton}>
+            <Text style={styles.sleepButtonIcon}>🛏</Text>
+            <View style={styles.sleepButtonTextWrap}>
+              <Text style={styles.sleepButtonTitle}>취침 모드</Text>
+              <Text style={styles.sleepButtonSubtitle}>취침 감지 조건과 취침 중 기기 상태를 설정해요</Text>
+            </View>
+            <Text style={styles.sleepButtonChevron}>›</Text>
+          </Card>
+        </AnimatedPressable>
+
         {rules.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Text style={styles.emptyText}>
@@ -665,6 +677,7 @@ export default function AutomationScreen() {
             : undefined
         }
       />
+      <SleepPresetModal visible={sleepModalOpen} onClose={() => setSleepModalOpen(false)} />
     </SafeAreaView>
   );
 }
@@ -867,4 +880,94 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.white,
   },
+  modalCloseButtonSolo: {
+    flex: 0,
+    flexBasis: 'auto',
+    marginTop: 16,
+  },
+
+  // "🛏 취침 모드" 진입 버튼(규칙 목록 위) 및 SleepPresetModal 전용 스타일 - 예전 SleepModeScreen.tsx에서 그대로 옮김.
+  sleepButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  sleepButtonIcon: { fontSize: 22 },
+  sleepButtonTextWrap: { flex: 1 },
+  sleepButtonTitle: { fontFamily: fonts.jalnan, fontSize: 15, color: colors.text },
+  sleepButtonSubtitle: { fontSize: 12, color: colors.textGray, marginTop: 2 },
+  sleepButtonChevron: { fontSize: 18, color: colors.textGray },
+
+  sleepToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  sleepToggleLabel: { flex: 1, fontFamily: fonts.jalnan, fontSize: 14, color: colors.text },
+  sleepToggleChip: {
+    flexShrink: 0,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sleepToggleChipOn: { backgroundColor: colors.orange, borderColor: colors.orange },
+  sleepToggleChipText: { fontFamily: fonts.jalnan, fontSize: 12, color: colors.textGray2 },
+  sleepToggleChipTextOn: { color: colors.white },
+
+  sleepDeviceRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  sleepTargetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 10,
+  },
+  sleepTargetLabel: { fontSize: 12, color: colors.textGray },
+  sleepTargetSegment: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sleepTargetOption: {
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    backgroundColor: colors.white,
+  },
+  sleepTargetOptionSelected: { backgroundColor: colors.orange },
+  sleepTargetOptionText: { fontFamily: fonts.jalnan, fontSize: 12, color: colors.textGray2 },
+  sleepTargetOptionTextSelected: { color: colors.white },
+
+  sleepStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  sleepStepperControl: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sleepStepperButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sleepStepperButtonText: { fontFamily: fonts.jalnan, fontSize: 16, color: colors.text },
+  sleepStepperValue: { fontFamily: fonts.jalnan, fontSize: 14, color: colors.text, minWidth: 46, textAlign: 'center' },
 });
