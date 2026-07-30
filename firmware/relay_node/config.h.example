@@ -10,7 +10,10 @@
 // secureClient(WiFiClientSecure, TLS 전용)로는 평문 HTTP 서버에 연결할 수 없으므로,
 // http.begin(secureClient, ...) 호출도 함께 http.begin(...)(클라이언트 인자 없이)로 되돌려야 한다.
 #define API_BASE_URL "https://yngndbonhttzfuptrjxrywoqs40iblyr.lambda-url.ap-northeast-2.on.aws"
-// VITA/backend/.env 의 DEVICE_API_KEY와 반드시 동일해야 함 (이미 맞춰서 생성해둔 값)
+// 이 기기만의 인증 키 - 자유롭게 정해도 된다(다른 노드와 같은 값을 써도 무방).
+// 백엔드가 이 기기의 첫 등록 요청에 실려온 값을 그대로 저장해서 그 이후부터는
+// 이 값으로만 인증한다(trust-on-first-use) - VITA/backend/.env의 DEVICE_API_KEY와
+// 더 이상 반드시 같을 필요는 없음. 키를 재발급하려면 백엔드에서 이 기기를 삭제 후 재부팅.
 #define DEVICE_KEY "345e01dbf13a5ba7d12843403115746a7f18b270431bc565"
 
 #define DEVICE_ID "living-relay-01"

@@ -168,5 +168,7 @@ def fake_supabase():
 def client(fake_supabase):
     with patch("app.routers.rooms.get_supabase", return_value=fake_supabase), patch(
         "app.routers.devices.get_supabase", return_value=fake_supabase
-    ), patch("app.routers.energy.get_supabase", return_value=fake_supabase):
+    ), patch("app.routers.energy.get_supabase", return_value=fake_supabase), patch(
+        "app.deps.get_supabase", return_value=fake_supabase
+    ):
         yield TestClient(app)

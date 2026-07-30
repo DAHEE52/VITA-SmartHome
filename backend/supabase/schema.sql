@@ -13,13 +13,20 @@ create table if not exists devices (
   type text not null check (type in ('env_sensor', 'relay', 'power_monitor', 'presence_cam')),
   label text,
   state text not null default 'off',
-  last_seen_at timestamptz
+  last_seen_at timestamptz,
+  device_key text
 );
 
 -- 마이그레이션: 이미 devices 테이블이 만들어진(예전 room text 컬럼을 쓰던) 기존 프로젝트용.
 -- 새 프로젝트에서는 위 create table로 처음부터 room_id로 생성되므로 아래는 그냥 no-op.
 alter table devices add column if not exists room_id bigint references rooms(id) on delete set null;
 alter table devices drop column if exists room;
+
+-- 마이그레이션: 기기별 개별 인증 키(trust-on-first-use) 도입 전 기존 프로젝트용.
+-- 새 프로젝트에서는 위 create table에 이미 포함되므로 그냥 no-op. app/deps.py의
+-- verify_device_key 참고 - 이 컬럼이 비어있는(NULL) 기기는 다음 요청의 X-Device-Key를
+-- 그대로 자기 키로 저장한다(기존에 공유 키를 쓰던 기기들이 자연스럽게 개별 키로 전환됨).
+alter table devices add column if not exists device_key text;
 
 -- 마이그레이션: presence_cam(카메라 재실 감지 노드) 타입 추가 전에 만들어진 기존 프로젝트용.
 -- 새 프로젝트에서는 위 create table의 check에 이미 포함되므로 그냥 no-op.
