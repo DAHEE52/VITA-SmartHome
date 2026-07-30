@@ -39,6 +39,10 @@ export type Room = { id: string; label: string; devices: Device[] };
 // VITA는 원룸(하나의 방) 전용 서비스라 방을 여러 개 만들 필요가 없다 - 항상 방이 정확히 하나만
 // 존재하도록 고정하고(없으면 자동 생성), UI에서도 방 추가/삭제를 아예 제공하지 않는다.
 const DEFAULT_ROOM_LABEL = 'ROOM';
+// 초기 로드 이후 기기 on/off 상태를 백엔드와 다시 맞추는 주기 - 앱의 다른 주기적 조회(20초)와 맞춘다.
+// 이게 없으면 Tapo 앱에서 직접 끄거나 명령이 조용히 실패했을 때, 화면이 실제 상태와 어긋난 채로
+// 다음 앱 재시작 전까지 계속 남아있었다(모든 상태 변경이 로컬 낙관적 갱신에만 의존했기 때문).
+const ROOMS_SYNC_MS = 20000;
 // 백엔드에 없는 값(모드/onSince)만 담아두는 로컬 캐시. room id -> device id 로 중첩.
 const EXTRAS_STORAGE_KEY = 'vita.rooms.extras.v1';
 
@@ -72,6 +76,35 @@ async function loadExtras(): Promise<ExtrasStore> {
     console.warn('방 설정(로컬) 불러오기 실패:', err);
     return {};
   }
+}
+
+// 백엔드에서 새로 받아온 기기 상태(on/off)를 기존 로컬 state에 합친다 - mode/brightness처럼 백엔드에
+// 없는 값과, 연결 시 중복 방지를 위해 붙인 이름(connectDevice 참고, 백엔드 label에는 반영 안 됨)은
+// 로컬 값을 그대로 유지한다. onSince는 "꺼져 있다가 막 켜진" 순간에만 새로 찍어서, 이미 켜져 있던
+// 기기의 누적 점등 시간(화재 예방 시스템이 참고)이 리셋되지 않게 한다.
+function reconcileDeviceState(prevRooms: Room[], apiRooms: api.RoomWithDevices[]): Room[] {
+  return apiRooms.map((r) => {
+    const roomId = String(r.id);
+    const prevRoom = prevRooms.find((pr) => pr.id === roomId);
+    return {
+      id: roomId,
+      label: r.name,
+      devices: r.devices.map((d) => {
+        const prevDevice = prevRoom?.devices.find((pd) => pd.id === d.id);
+        const nextOn = d.state === 'on';
+        const wasOn = prevDevice?.on ?? false;
+        return {
+          id: d.id,
+          name: prevDevice?.name ?? d.label ?? d.id,
+          on: nextOn,
+          mode: prevDevice?.mode ?? 'auto',
+          onSince: nextOn ? (wasOn ? prevDevice!.onSince : Date.now()) : null,
+          type: d.type,
+          brightness: prevDevice?.brightness ?? 100,
+        };
+      }),
+    };
+  });
 }
 
 function applyExtras(apiRooms: api.RoomWithDevices[], extras: ExtrasStore): Room[] {
@@ -126,6 +159,20 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       }
     })();
   }, []);
+
+  // 초기 로드 이후에도 기기 on/off 상태를 주기적으로 백엔드와 다시 맞춘다(reconcileDeviceState 참고) -
+  // 그 전까지는 이 앱이 보낸 명령을 낙관적으로 믿기만 해서, 다른 경로로 상태가 바뀌면 다음 앱 재시작
+  // 전까지 화면이 실제와 어긋난 채로 남을 수 있었다.
+  useEffect(() => {
+    if (!loaded) return;
+    const timer = setInterval(() => {
+      api
+        .getRooms()
+        .then((apiRooms) => setRooms((prev) => reconcileDeviceState(prev, apiRooms)))
+        .catch((err) => console.warn('방/기기 상태 재동기화 실패:', err));
+    }, ROOMS_SYNC_MS);
+    return () => clearInterval(timer);
+  }, [loaded]);
 
   // 백엔드에 없는 값(모드/onSince)만 뽑아서 로컬에 저장 - rooms가 바뀔 때마다.
   useEffect(() => {
