@@ -32,10 +32,19 @@ def register_device(body: DeviceRegister, x_device_key: str = Header(...)):
         supabase.table("devices").update(update).eq("id", body.device_id).execute()
     else:
         label = body.label or f"unregistered-{uuid.uuid4().hex[:6]}"
+        # "기기 추가"는 Tapo 스마트 콘센트(tapo_mqtt_bridge.py가 등록하는, id가 "tapo-"로 시작하는
+        # 기기)만 대상으로 한다 - ESP32 센서/릴레이 노드는 방에 자동 배정하지 않는다(원룸이라
+        # 배정 자체는 의미 없는 개념이지만, 그거와 별개로 스마트 콘센트가 아닌 기기가 기기 목록에
+        # 섞여 나오는 걸 원치 않음). room_id=None이면 앱 어디에도 안 보이는 상태로 남는다.
+        if body.device_id.startswith("tapo-"):
+            room_res = supabase.table("rooms").select("id").limit(1).execute()
+            room_id = room_res.data[0]["id"] if room_res.data else supabase.table("rooms").insert({"name": "ROOM"}).execute().data[0]["id"]
+        else:
+            room_id = None
         supabase.table("devices").insert(
             {
                 "id": body.device_id,
-                "room_id": None,
+                "room_id": room_id,
                 "type": body.type,
                 "label": label,
                 "state": body.state or "off",
