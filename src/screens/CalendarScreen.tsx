@@ -897,7 +897,11 @@ export default function CalendarScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <View style={[styles.content, { paddingTop: 16 * scale }]}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[styles.contentInner, { paddingTop: 16 * scale }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.titleRow}>
           <View style={styles.titleSide}>
             <AnimatedPressable onPress={() => setPickerVisible(true)} activeOpacity={0.7}>
@@ -957,7 +961,7 @@ export default function CalendarScreen() {
         <View style={[styles.addButtonWrap, { marginTop: 2 * scale, marginBottom: 2 * scale }]}>
           <AddButton scale={scale} onPress={() => setAddingSection('special')} />
         </View>
-      </View>
+      </ScrollView>
       <View style={styles.bottomNavWrap}>
         <BottomNav variant="sub" />
       </View>
@@ -1047,7 +1051,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
   content: {
     flex: 1,
+  },
+  contentInner: {
     paddingHorizontal: 20,
+    paddingBottom: 20,
   },
 
   titleRow: {

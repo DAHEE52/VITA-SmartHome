@@ -8,7 +8,7 @@
 // 조명), 소비전력 상위 5개 종류만 보여준 뒤 나머지는 "기타"로 합산한다(summarizeDeviceUsage,
 // RoomsContext의 로컬 방/기기 목록 기준 - 방/기기 관리는 아직 백엔드에 연동되지 않았다).
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -294,7 +294,11 @@ export default function EnergyUsageScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <View style={[styles.content, { paddingTop: 14 * scale }]}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[styles.contentInner, { paddingTop: 14 * scale }]}
+        showsVerticalScrollIndicator={false}
+      >
         <TopStatCard
           scale={scale}
           period={period}
@@ -314,7 +318,7 @@ export default function EnergyUsageScreen() {
         ) : (
           <Text style={[styles.emptyHint, { fontSize: 13 * scale }]}>지금 켜져 있는 기기가 없어요.</Text>
         )}
-      </View>
+      </ScrollView>
       <View style={styles.bottomNavWrap}>
         <BottomNav variant="sub" />
       </View>
@@ -326,8 +330,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
   content: {
     flex: 1,
+  },
+  contentInner: {
     paddingHorizontal: SCREEN_PADDING,
-    justifyContent: 'flex-start',
+    paddingBottom: 20,
   },
 
   tabsRow: {

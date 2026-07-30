@@ -12,7 +12,7 @@
 // "그 달의 숲"과 "성장 트래커"는 둘 다 화면에 항상 박혀 있지 않고 버튼을 눌러야 뜨는 팝업(Modal)이다.
 // 숲은 이 탭에 들어왔을 때 마침 오늘이 그 달의 마지막 날이면 버튼 없이도 자동으로 한 번 뜬다.
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable, ScrollView } from 'react-native';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -410,7 +410,11 @@ export default function EnergyTreeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <View style={[styles.content, { paddingTop: 16 * scale }]}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[styles.contentInner, { paddingTop: 16 * scale }]}
+        showsVerticalScrollIndicator={false}
+      >
         <SectionPill label="에너지 나무" scale={scale} />
 
         <AnimatedPressable onPress={openPicker} activeOpacity={0.7} style={styles.dateHeaderWrap}>
@@ -445,7 +449,7 @@ export default function EnergyTreeScreen() {
         <StatRow savedKwh={monthSavedKwh} scale={scale} />
 
         <View style={{ flex: 1 }} />
-      </View>
+      </ScrollView>
       <View style={styles.bottomNavWrap}>
         <BottomNav variant="sub" />
       </View>
@@ -495,7 +499,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
   content: {
     flex: 1,
+  },
+  contentInner: {
+    flexGrow: 1,
     paddingHorizontal: 20,
+    paddingBottom: 20,
   },
 
   pillWrap: {

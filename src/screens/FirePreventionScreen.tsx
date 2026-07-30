@@ -143,7 +143,7 @@ function AnomalyRow({ room, device, now }: { room: string; device: Device; now: 
   return (
     <View style={styles.anomalyRow}>
       <View style={styles.anomalyHeaderRow}>
-        <Text style={styles.anomalyDeviceText}>
+        <Text style={styles.anomalyDeviceText} numberOfLines={1}>
           {room} · {device.name}
         </Text>
         <Text style={[styles.anomalyStatusText, isAnomalous && styles.anomalyStatusTextAlert]}>
@@ -439,15 +439,19 @@ const styles = StyleSheet.create({
   },
   anomalyHeaderRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
     marginBottom: 6,
   },
   anomalyDeviceText: {
+    flex: 1,
     fontFamily: fonts.jalnan,
     fontSize: 14,
     color: colors.text,
   },
   anomalyStatusText: {
+    flexShrink: 0,
     fontFamily: fonts.jalnan,
     fontSize: 12,
     color: colors.green,

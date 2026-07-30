@@ -40,7 +40,9 @@ function StepperRow({
 }) {
   return (
     <View style={styles.stepperRow}>
-      <Text style={styles.toggleLabel}>{label}</Text>
+      <Text style={styles.toggleLabel} numberOfLines={1}>
+        {label}
+      </Text>
       <View style={styles.stepperControl}>
         <AnimatedPressable
           style={styles.stepperButton}
@@ -81,7 +83,9 @@ function DeviceSleepRow({
   return (
     <View style={styles.deviceRow}>
       <View style={styles.toggleRow}>
-        <Text style={styles.toggleLabel}>{name}</Text>
+        <Text style={styles.toggleLabel} numberOfLines={1}>
+          {name}
+        </Text>
         <AnimatedPressable
           style={[styles.toggleChip, included && styles.toggleChipOn]}
           onPress={onToggleIncluded}
@@ -239,12 +243,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
     paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  toggleLabel: { fontFamily: fonts.jalnan, fontSize: 14, color: colors.text },
+  toggleLabel: { flex: 1, fontFamily: fonts.jalnan, fontSize: 14, color: colors.text },
   toggleChip: {
+    flexShrink: 0,
     paddingVertical: 6,
     paddingHorizontal: 16,
     borderRadius: 12,
