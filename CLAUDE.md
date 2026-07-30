@@ -29,6 +29,16 @@ MainScreen/SmartHomeControlScreen/EnergyUsageScreen 3화면은 이제 목업이 
 - **펌웨어**: `firmware/`에 XIAO ESP32S3용 Arduino 스케치 3종(`env_presence_node`, `relay_node`, `power_monitor_node`)이 있다. 통신은 순수 HTTP(MQTT 없음) — 센서 노드는 주기적으로 push, 릴레이 노드는 대기 명령을 poll.
 - **로컬 실행 시 주소**: `.env`의 `EXPO_PUBLIC_API_URL`이 백엔드 주소다. 웹에서는 `localhost`도 되지만 실기기(Expo Go)에서는 반드시 백엔드를 실행 중인 PC의 LAN IP를 써야 한다.
 
+## 설계 원칙 — 에너지 스마트홈 관점의 확장성
+
+VITA는 "AI 에너지 스마트홈" 메이커톤 프로젝트다. 지금은 메이커톤 프로토타입 단계라 센서 몇 개, 기기 한두 개 정도로만 테스트하고 있지만, 새 기능을 만들거나 기존 코드를 고칠 때는 항상 "실제 서비스로 배포되어 등록되는 기기·센서 수와 쌓이는 데이터양이 크게 늘어나도 이 코드가 정상 동작하는가"를 에너지 스마트홈 관점에서 함께 점검한다. "지금 눈앞의 기기 1~2개로 잘 되는가"만 확인하고 끝내지 않는다.
+
+- **고정 개수/최근 N행 가정 금지**: "최근 200행만 보고 기기별 최신값을 찾는" 식의 패턴은 기기·센서 수가 늘면 자주 push하는 기기가 드물게 push하는 기기의 값을 밀어내 통째로 빠뜨릴 수 있다. `backend/app/routers/rooms.py`가 쓰는 `latest_sensor_readings` DB 뷰(`DISTINCT ON (device_id, metric)`) + 인덱스 조합처럼, 등록된 기기/데이터 수와 무관하게 정확한 결과를 내는 쿼리로 설계한다.
+- **특정 기기 ID/개수 하드코딩 금지**: 기기 목록·필터링은 기기 타입이나 접두어(`tapo-` 등) 같은 일반 규칙으로 걸러야지, 특정 device_id 몇 개나 "기기는 하나뿐"이라는 가정으로 짜면 안 된다(`get_unassigned_devices()`의 `tapo-%` LIKE 필터 참고) — 실제로 이 앱은 Tapo 스마트 플러그가 1개에서 2개로 늘어난 것도 코드 변경 없이 그대로 수용했다.
+- **인증/보안도 기기 수 증가를 전제로**: 모든 기기가 키 하나를 공유하는 인증은 기기 하나만 털려도 전체가 뚫리므로, `devices.device_key`(기기별 개별 키, trust-on-first-use, `app/deps.py` 참고)처럼 기기 수가 늘어도 서로 격리되는 모델을 유지한다.
+- **DB 스키마 변경은 반드시 멱등 마이그레이션 동반**: `backend/supabase/schema.sql`에 `alter table ... add column if not exists`류의 마이그레이션을 함께 추가하고, 실제 Supabase SQL Editor에도 반영한 뒤에 배포해야 한다(순서: 마이그레이션 먼저 → 배포는 그다음, 반대로 하면 컬럼 없음 에러로 죽는다).
+- **프런트 폴링도 기기 수에 비례해 무거워지지 않게**: 기기 하나 늘 때마다 별도 polling interval을 새로 만들기보다, 이미 있는 폴링 주기·일괄 조회(batch) 패턴(`/home/summary`, `/rooms/status` 등 방 전체를 한 번에 반환하는 엔드포인트)을 재사용한다.
+
 ## 명령어
 
 ```bash
