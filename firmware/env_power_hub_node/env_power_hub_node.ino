@@ -1,7 +1,8 @@
 // 환경/전력 센서 허브 (보드 1 - 브레드보드_최종배치_v4.md): XIAO ESP32S3 +
 // BME280(온습도) + BH1750(조도) + SSD1306 OLED(로컬 표시) + PZEM-004T v3(전력).
 // 온습도/조도는 living-env-01, 전력은 living-power-01 두 device_id로 각각 등록해서
-// 30초마다 FastAPI로 push한다. OLED는 서버로 보내지 않고 보드에서 로컬로만 보여준다.
+// 5초마다 FastAPI로 push한다(앱 폴링 주기와 맞춤). OLED는 서버로 보내지 않고 보드에서
+// 로컬로만 보여준다.
 //
 // 필요 라이브러리 (Arduino Library Manager에서 설치):
 //   - Adafruit BME280 Library (+ Adafruit Unified Sensor, Adafruit BusIO)
@@ -29,7 +30,7 @@
 
 #include "config.h"
 
-static const unsigned long PUSH_INTERVAL_MS = 30000;
+static const unsigned long PUSH_INTERVAL_MS = 5000;
 static const unsigned long OLED_REFRESH_MS = 2000;
 
 Adafruit_BME280 bme;
