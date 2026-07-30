@@ -16,7 +16,6 @@
 
 // 이 노드의 고유 ID와 소속 방 이름
 #define DEVICE_ID "living-env-01"
-#define ROOM "거실"
 
 // PIR(HC-SR501) 재실 감지 센서를 연결하지 않았다면 0으로 설정 (BME280 온습도만 전송).
 // 정의하지 않으면 기본값 1(PIR 있음)로 동작.

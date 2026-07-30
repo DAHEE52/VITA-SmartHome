@@ -69,8 +69,7 @@ void registerDevice(const char *deviceId, const char *type, const char *labelSuf
   JsonDocument doc;
   doc["device_id"] = deviceId;
   doc["type"] = type;
-  doc["room"] = ROOM;
-  doc["label"] = String(ROOM) + " " + labelSuffix;
+  doc["label"] = labelSuffix;
 
   int status = postJson("/devices/register", doc);
   Serial.print(deviceId);

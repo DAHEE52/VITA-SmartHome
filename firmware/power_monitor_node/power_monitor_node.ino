@@ -59,8 +59,7 @@ void registerDevice() {
   JsonDocument doc;
   doc["device_id"] = DEVICE_ID;
   doc["type"] = "power_monitor";
-  doc["room"] = ROOM;
-  doc["label"] = ROOM " 전력 측정";
+  doc["label"] = "전력 측정";
 
   int status = postJson("/devices/register", doc);
   Serial.print("등록 응답 코드: ");

@@ -14,4 +14,3 @@
 // 이 보드는 온습도/조도(env_sensor)와 전력(power_monitor) 두 device_id로 등록된다.
 #define ENV_DEVICE_ID "living-env-01"
 #define POWER_DEVICE_ID "living-power-01"
-#define ROOM "거실"

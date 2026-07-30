@@ -11,7 +11,6 @@
 // VITA/backend/.env 의 DEVICE_API_KEY와 반드시 동일해야 함 (이미 맞춰서 생성해둔 값)
 #define DEVICE_KEY "345e01dbf13a5ba7d12843403115746a7f18b270431bc565"
 
-#define ROOM "거실"
 
 // PIR(재실) 1개 + 릴레이 4개 device_id
 #define PRESENCE_DEVICE_ID "living-presence-01"

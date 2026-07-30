@@ -14,4 +14,3 @@
 #define DEVICE_KEY "345e01dbf13a5ba7d12843403115746a7f18b270431bc565"
 
 #define DEVICE_ID "living-power-01"
-#define ROOM "거실"
