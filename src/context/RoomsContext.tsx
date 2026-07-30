@@ -23,21 +23,15 @@ export type DeviceMode = 'auto' | 'manual';
 // id: 백엔드 devices.id (예: ESP32가 등록한 값 또는 mock-register가 만든 값) - 서버 API 호출에 쓴다.
 // type: 'power_monitor'면 실제 전력 측정값이 있다는 뜻 - 방 설정 화면에서 실시간 W를 조회할지 판단하는 데 쓴다.
 export type Device = { id: string; name: string; on: boolean; mode: DeviceMode; onSince: number | null; type: api.DeviceType };
-// targetTemp: 이 방의 목표 온도(°C) - 사용자가 방 설정에서 직접 조정하거나, 자동화 규칙
-// (AutomationContext)이 외출/외박/루틴 일정에 맞춰 자동으로 바꿀 수 있다.
-export type Room = { id: string; label: string; devices: Device[]; targetTemp: number };
+export type Room = { id: string; label: string; devices: Device[] };
 
 // VITA는 원룸(하나의 방) 전용 서비스라 방을 여러 개 만들 필요가 없다 - 항상 방이 정확히 하나만
 // 존재하도록 고정하고(없으면 자동 생성), UI에서도 방 추가/삭제를 아예 제공하지 않는다.
 const DEFAULT_ROOM_LABEL = 'ROOM';
-const DEFAULT_TARGET_TEMP = 24;
-// 백엔드에 없는 값(모드/onSince/목표온도)만 담아두는 로컬 캐시. room id -> device id 로 중첩.
+// 백엔드에 없는 값(모드/onSince)만 담아두는 로컬 캐시. room id -> device id 로 중첩.
 const EXTRAS_STORAGE_KEY = 'vita.rooms.extras.v1';
 
-type ExtrasStore = Record<
-  string,
-  { targetTemp: number; devices: Record<string, { mode: DeviceMode; onSince: number | null }> }
->;
+type ExtrasStore = Record<string, { devices: Record<string, { mode: DeviceMode; onSince: number | null }> }>;
 
 type RoomsContextValue = {
   rooms: Room[];
@@ -48,9 +42,9 @@ type RoomsContextValue = {
   toggleDeviceMode: (roomId: string, deviceId: string) => void;
   toggleDevicePower: (roomId: string, deviceId: string) => void;
   setDevicePower: (roomId: string, deviceName: string, on: boolean) => void;
+  setDevicePowerById: (roomId: string, deviceId: string, on: boolean) => void;
   forceOffDevice: (roomId: string, deviceName: string) => void;
   forceOffRoom: (roomId: string) => void;
-  setRoomTargetTemp: (roomId: string, temp: number) => void;
 };
 
 const RoomsContext = createContext<RoomsContextValue | null>(null);
@@ -72,7 +66,6 @@ function applyExtras(apiRooms: api.RoomWithDevices[], extras: ExtrasStore): Room
     return {
       id: roomId,
       label: r.name,
-      targetTemp: roomExtra?.targetTemp ?? DEFAULT_TARGET_TEMP,
       devices: r.devices.map((d) => {
         const deviceExtra = roomExtra?.devices?.[d.id];
         return {
@@ -118,13 +111,12 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  // 백엔드에 없는 값(모드/onSince/목표온도)만 뽑아서 로컬에 저장 - rooms가 바뀔 때마다.
+  // 백엔드에 없는 값(모드/onSince)만 뽑아서 로컬에 저장 - rooms가 바뀔 때마다.
   useEffect(() => {
     if (!loaded) return;
     const extras: ExtrasStore = {};
     for (const r of rooms) {
       extras[r.id] = {
-        targetTemp: r.targetTemp,
         devices: Object.fromEntries(r.devices.map((d) => [d.id, { mode: d.mode, onSince: d.onSince }])),
       };
     }
@@ -246,7 +238,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  // 자동화 규칙(AutomationContext)이 외출/외박/루틴 일정에 맞춰 기기를 명시적으로 켜고 끌 때 쓴다.
+  // SleepContext(취침 모드 프리셋)가 이름 키워드로 찾은 기기를 켜고 끌 때 쓴다.
   // toggleDevicePower와 달리 on 값을 직접 지정하고, mode는 건드리지 않는다(기존 자동/수동 의미 유지).
   const setDevicePower = (roomId: string, deviceName: string, on: boolean) => {
     const device = roomsRef.current.find((r) => r.id === roomId)?.devices.find((d) => d.name === deviceName);
@@ -261,6 +253,30 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
               devices: r.devices.map((d) =>
                 d.name === deviceName ? { ...d, on, onSince: on ? Date.now() : null } : d
               ),
+            }
+      )
+    );
+    if (device) {
+      rollbackOnFailure(api.controlDevice(device.id, on ? 'on' : 'off'), prev, setRooms, '기기 전원 제어', () =>
+        notifySaveFailed('기기 전원 제어')
+      );
+    }
+  };
+
+  // 자동화 규칙(AutomationContext)이 규칙에서 고른 기기(deviceId)를 명시적으로 켜고 끌 때 쓴다.
+  // setDevicePower와 달리 이름이 아니라 id로 정확히 하나만 찾으므로, 같은 이름을 가진 기기가
+  // 여럿이어도 엉뚱한 기기가 반응하지 않는다.
+  const setDevicePowerById = (roomId: string, deviceId: string, on: boolean) => {
+    const device = roomsRef.current.find((r) => r.id === roomId)?.devices.find((d) => d.id === deviceId);
+    const prev = rooms;
+
+    setRooms((p) =>
+      p.map((r) =>
+        r.id !== roomId
+          ? r
+          : {
+              ...r,
+              devices: r.devices.map((d) => (d.id === deviceId ? { ...d, on, onSince: on ? Date.now() : null } : d)),
             }
       )
     );
@@ -332,12 +348,6 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  // 방의 목표 온도를 지정한다(사용자가 방 설정에서 직접, 또는 자동화 규칙이 자동으로).
-  // 백엔드에 없는 값이라 로컬(extras)에만 저장된다.
-  const setRoomTargetTemp = (roomId: string, temp: number) => {
-    setRooms((prev) => prev.map((r) => (r.id !== roomId ? r : { ...r, targetTemp: temp })));
-  };
-
   return (
     <RoomsContext.Provider
       value={{
@@ -349,9 +359,9 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
         toggleDeviceMode,
         toggleDevicePower,
         setDevicePower,
+        setDevicePowerById,
         forceOffDevice,
         forceOffRoom,
-        setRoomTargetTemp,
       }}
     >
       {children}
