@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"  # tapo_power_bridge.py 등 다른 스크립트가 같은 .env를 공유하므로,
+        # Settings에 없는 키(TAPO_* 등)가 있어도 에러 내지 않고 무시한다.
 
 
 settings = Settings()
