@@ -605,6 +605,7 @@ const styles = StyleSheet.create({
   },
   renameInput: {
     flex: 1,
+    minWidth: 0,
     fontFamily: fonts.jalnan,
     fontSize: 16,
     color: colors.text,
@@ -614,6 +615,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   renameSaveButton: {
+    flexShrink: 0,
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 12,
@@ -744,6 +746,7 @@ const styles = StyleSheet.create({
   // 보이므로 상쇄한다(MainScreen의 절전 목표 모달과 동일한 패턴).
   modalCloseButtonSolo: {
     flex: 0,
+    flexBasis: 'auto',
     marginTop: 16,
   },
   modalCloseText: {
