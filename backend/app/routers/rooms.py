@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import mean
 
 from fastapi import APIRouter, HTTPException
@@ -20,6 +20,11 @@ from app.schemas import (
 from app.supabase_client import get_supabase
 
 router = APIRouter(tags=["rooms"])
+
+# PIR이 이 시간 안에 움직임을 감지했으면 카메라(occupied/empty) 판정과 무관하게 "재실"로 본다.
+# 카메라 모델은 8초마다 한 프레임만 보고 판단하는 이미지 분류라, 사람이 짧게 지나가거나 카메라
+# 사각지대에서 움직이는 경우를 놓칠 수 있는데 PIR이 이런 순간 이동을 더 잘 잡아낸다.
+PRESENCE_MOTION_WINDOW_MINUTES = 10
 
 
 def _now_iso() -> str:
@@ -58,6 +63,21 @@ def _latest_motion_at() -> str | None:
     return res.data[0]["recorded_at"] if res.data else None
 
 
+def _fuse_presence(camera_presence: bool | None, last_motion_iso: str | None) -> bool | None:
+    """카메라(occupied/empty AI 모델) 판정과 PIR 움직임 감지를 합쳐 최종 재실 여부를 낸다.
+    PIR이 최근(PRESENCE_MOTION_WINDOW_MINUTES) 안에 움직임을 감지했으면, 카메라가 뭐라고 판단했든
+    (심지어 아직 카메라 값이 한 번도 안 왔든) 무조건 재실로 본다 - 카메라 사각지대/순간 이동 보완용.
+    둘 다 신호가 없으면(카메라도 없고 최근 움직임도 없으면) 판단 불가(None)를 그대로 유지한다."""
+    recent_motion = False
+    if last_motion_iso:
+        last_motion_dt = datetime.fromisoformat(last_motion_iso)
+        recent_motion = (datetime.now(timezone.utc) - last_motion_dt) <= timedelta(minutes=PRESENCE_MOTION_WINDOW_MINUTES)
+
+    if recent_motion:
+        return True
+    return camera_presence
+
+
 @router.get("/home/summary", response_model=HomeSummary)
 def home_summary():
     supabase = get_supabase()
@@ -68,13 +88,15 @@ def home_summary():
     temperature_values = list(_latest_reading_per_device("temperature").values())
     # 카메라(presence_cam)가 여러 대여도 "하나라도 재실로 감지"하면 재실로 본다.
     presence_values = list(_latest_reading_per_device("presence").values())
+    camera_presence = any(v == 1 for v in presence_values) if presence_values else None
+    last_motion_iso = _latest_motion_at()
 
     return HomeSummary(
         active_device_count=active_device_count,
         humidity=mean(humidity_values) if humidity_values else None,
         temperature=mean(temperature_values) if temperature_values else None,
-        presence=any(v == 1 for v in presence_values) if presence_values else None,
-        last_motion_at=_latest_motion_at(),
+        presence=_fuse_presence(camera_presence, last_motion_iso),
+        last_motion_at=last_motion_iso,
     )
 
 

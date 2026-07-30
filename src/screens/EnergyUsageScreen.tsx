@@ -77,9 +77,9 @@ const CARD_LABEL: Record<Period, string> = {
 };
 
 const PERIOD_TABS: { key: Period; label: string; bg: string }[] = [
-  { key: 'year', label: '연', bg: colors.chipRed },
-  { key: 'month', label: '월', bg: colors.chipYellow },
   { key: 'day', label: '일', bg: colors.chipGreen },
+  { key: 'month', label: '월', bg: colors.chipYellow },
+  { key: 'year', label: '연', bg: colors.chipRed },
 ];
 
 // kWh 값을 크기에 맞게 적당한 소수 자릿수로 표시한다 - 실제 누적치가 아직 작을 때(0.0x 단위)도
