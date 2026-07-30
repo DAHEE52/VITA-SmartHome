@@ -380,19 +380,15 @@ function RuleEditModal({
   );
 }
 
-// 재실 여부 카드 - firmware/presence_vision_node 카메라가 실시간으로 감지한 결과를 그대로
-// 보여주기만 한다(스위치는 읽기 전용 표시용, 사용자가 직접 뒤집을 수 없음).
+// 재실 여부 카드 - 카메라(occupied/empty AI 모델)와 PIR 움직임 감지를 백엔드에서 합친 결과를
+// 그대로 보여주기만 한다(스위치는 읽기 전용 표시용, 사용자가 직접 뒤집을 수 없음).
 function PresenceCard({ isHome }: { isHome: boolean }) {
   return (
     <Card style={styles.presenceCard}>
       <View style={styles.presenceRow}>
         <View style={styles.presenceTextCol}>
-          <Text style={styles.presenceTitle}>재실 감지 (카메라)</Text>
-          <Text style={styles.presenceHint}>
-            {isHome
-              ? '카메라가 재실 상태로 감지했어요.'
-              : '카메라가 외출 상태로 감지했어요.'}
-          </Text>
+          <Text style={styles.presenceTitle}>재실 감지</Text>
+          <Text style={styles.presenceHint}>재실/외출을 확인했어요.</Text>
         </View>
         <Switch
           value={isHome}
