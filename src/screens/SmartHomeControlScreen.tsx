@@ -412,7 +412,9 @@ function DeviceSettingsModal({
                     </Text>
                   </AnimatedPressable>
 
-                  {device?.mode === 'manual' ? (
+                  {/* 조명(living-light-01)은 자동/수동 전환 없이 항상 바로 켜고 끌 수 있다 -
+                      다른 기기는 기존대로 수동 모드일 때만 직접 제어된다. */}
+                  {device?.mode === 'manual' || device?.id === 'living-light-01' ? (
                     <AnimatedPressable
                       style={[styles.statusBadge, device?.on ? styles.statusOn : styles.statusOff]}
                       onPress={() => roomId && device && onTogglePower(roomId, device.id)}
@@ -433,8 +435,9 @@ function DeviceSettingsModal({
               </View>
 
               {/* PWM 밝기 조절이 되는 조명(env_power_hub_node의 living-light-01)만 노출 - 다른
-                  기기(Tapo 콘센트 등)는 on/off만 지원하므로 밝기 명령을 보내면 안 된다. */}
-              {device?.id === 'living-light-01' && device?.mode === 'manual' && (
+                  기기(Tapo 콘센트 등)는 on/off만 지원하므로 밝기 명령을 보내면 안 된다.
+                  자동/수동 전환 없이 항상 바로 조절 가능. */}
+              {device?.id === 'living-light-01' && (
                 <View style={styles.deviceRow}>
                   <Text style={styles.deviceName}>밝기</Text>
                   <View style={styles.deviceControls}>
