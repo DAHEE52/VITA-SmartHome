@@ -23,39 +23,27 @@ import { summarizeDeviceUsage } from '../utils/energy';
 import { calcChange, SeriesPoint } from '../utils/energySeries';
 import { getEnergyUsage, EnergyUsage } from '../api/client';
 
-// 기기별로 나뉘어 오는 백엔드 시리즈를 x_label이 같은 지점끼리 합쳐 "총 사용량" 한 줄로 만든다.
+// 기기별로 나뉘어 오는 백엔드 시리즈를 같은 시간 구간(sort_key)끼리 합쳐 "총 사용량" 한 줄로 만든다.
 // (등록된 power_monitor 기기가 여러 개여도 화면에는 지금처럼 단일 라인차트만 유지하기 위함)
+// x_label(예: "MM/DD", "HH시")은 표시용이라 연도/날짜 정보가 생략돼 있어 서로 다른 구간이 같은
+// 라벨을 가질 수 있다(예: 여러 해의 "12/31", 여러 날의 "23시") - 그래서 병합/정렬은 반드시 원본
+// 버킷 키인 sort_key로 해야 한다. sort_key는 "YYYY"/"YYYY-MM-DD"/"YYYY-MM-DD HH" 형태라 문자열
+// 그대로 정렬하면 항상 시간순이 된다(기기 응답 순서와 무관하게).
 function aggregateTotalSeries(usage: EnergyUsage): SeriesPoint[] {
-  const order: string[] = [];
-  const totals = new Map<string, number>();
+  const totals = new Map<string, { label: string; value: number }>();
   for (const s of usage.series) {
     for (const p of s.points) {
-      if (!totals.has(p.x_label)) {
-        order.push(p.x_label);
-        totals.set(p.x_label, 0);
+      const existing = totals.get(p.sort_key);
+      if (existing) {
+        existing.value += p.value;
+      } else {
+        totals.set(p.sort_key, { label: p.x_label, value: p.value });
       }
-      totals.set(p.x_label, totals.get(p.x_label)! + p.value);
     }
   }
-  return order.map((label) => ({ label, value: totals.get(label)! }));
-}
-
-// "월" 탭 비교 전용 - period='month' 응답은 일별(x_label "MM/DD")로 쪼개져 있어서, 그대로 마지막
-// 두 점을 비교하면 "어제 대비 오늘"이 되어버린다("전월 대비"라는 라벨과 안 맞음). 그래서 여기서
-// x_label의 "MM" 부분만 뽑아 월 단위로 다시 합산한 뒤, 실제로 지난달 합계와 비교되도록 만든다.
-function aggregateByMonth(dailySeries: SeriesPoint[]): SeriesPoint[] {
-  const order: string[] = [];
-  const totals = new Map<string, number>();
-  for (const p of dailySeries) {
-    const month = p.label.split('/')[0];
-    if (!month) continue;
-    if (!totals.has(month)) {
-      order.push(month);
-      totals.set(month, 0);
-    }
-    totals.set(month, totals.get(month)! + p.value);
-  }
-  return order.map((month) => ({ label: `${month}월`, value: totals.get(month)! }));
+  return Array.from(totals.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([, v]) => v);
 }
 
 const SCREEN_PADDING = 20;
@@ -71,9 +59,7 @@ const POINT_COUNT: Record<Period, number> = { year: 5, month: 5, day: 7 };
 const CARD_LABEL: Record<Period, string> = {
   year: '전년 대비 사용량',
   month: '전월 대비 사용량',
-  // "일" 탭은 x_label이 "HH시"뿐이라 날짜 구분이 없어 진짜 전일(어제) 합계를 구할 수 없다.
-  // 실제로 비교하는 건 그래프의 마지막 두 시간대 값이므로 라벨도 그에 맞춘다.
-  day: '직전 시간 대비 사용량',
+  day: '전일 대비 사용량',
 };
 
 const PERIOD_TABS: { key: Period; label: string; bg: string }[] = [
@@ -285,9 +271,9 @@ export default function EnergyUsageScreen() {
 
   const fullSeries = aggregateTotalSeries(usage);
   const series = fullSeries.slice(-POINT_COUNT[period]);
-  // 차트는 항상 "최근 N개 구간"을 보여주지만, 증감률 카드는 "월" 탭에서만 월 단위로 다시 합산한
-  // 시리즈를 써서 실제 전월 대비가 되도록 한다(그 외 탭은 기존처럼 마지막 두 점을 비교).
-  const { percent, direction } = calcChange(period === 'month' ? aggregateByMonth(fullSeries) : series);
+  // 백엔드가 이미 period에 맞는 구간(연/월/일)으로 집계해서 주므로, 마지막 두 점을 비교하면
+  // 곧 전년/전월/전일 대비가 된다.
+  const { percent, direction } = calcChange(series);
 
   // 방이 달라도 기기 종류가 같으면 하나로 묶고, 소비전력이 큰 상위 5개만 남긴 뒤 나머지는 "기타"로 합산한다.
   const deviceUsage = summarizeDeviceUsage(rooms);

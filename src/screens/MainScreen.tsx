@@ -20,7 +20,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { useAppWindowDimensions } from '../hooks/useAppWindowDimensions';
 
-import { getHomeSummary, HomeSummary } from '../api/client';
+import { getHomeSummary, HomeSummary, getWeather, WeatherOut } from '../api/client';
 
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
@@ -121,14 +121,24 @@ function TimeCard({ scale }: { scale: number }) {
 }
 
 // 내부 습도 / 실내 온도 / 날씨 3열 위젯.
-// 습도·온도는 /home/summary(env_presence_node 센서 실측값)를 받아 보여준다 - 값이 아직 없으면(센서
-// 미연결/조회 실패) "-"로 표시한다. 날씨는 백엔드에 대응하는 데이터가 없어 계속 고정값을 보여준다.
-function StatusCard({ scale, summary }: { scale: number; summary: HomeSummary | null }) {
+// 습도·온도는 /home/summary(env_presence_node 센서 실측값)를, 날씨는 /weather/current(기상청
+// 공공데이터포털 초단기예보)를 받아 보여준다 - 값이 아직 없으면(센서 미연결/조회 실패/기상청
+// 인증키 미설정) 셋 다 "-"로 표시한다.
+function StatusCard({
+  scale,
+  summary,
+  weather,
+}: {
+  scale: number;
+  summary: HomeSummary | null;
+  weather: WeatherOut | null;
+}) {
   const iconWrapStyle = [styles.statusIconWrap, { height: 60 * scale, marginTop: 14 * scale }];
   const valueStyle = [styles.statusValue, { fontSize: 19 * scale, marginTop: 14 * scale }];
   const labelStyle = [styles.statusLabel, { fontSize: 16 * scale }];
   const humidityText = summary?.humidity != null ? `${summary.humidity.toFixed(1)} %` : '-';
   const temperatureText = summary?.temperature != null ? `${summary.temperature.toFixed(1)} °C` : '-';
+  const weatherText = weather?.condition ?? '-';
   return (
     <Card style={[styles.statusCard, { padding: 20 * scale }]}>
       <View style={styles.statusRow}>
@@ -151,7 +161,7 @@ function StatusCard({ scale, summary }: { scale: number; summary: HomeSummary | 
           <View style={iconWrapStyle}>
             <WeatherIcon size={48 * scale} />
           </View>
-          <Text style={valueStyle}>맑음</Text>
+          <Text style={valueStyle}>{weatherText}</Text>
         </View>
       </View>
     </Card>
@@ -436,6 +446,22 @@ export default function MainScreen() {
     }, [])
   );
 
+  const [weather, setWeather] = useState<WeatherOut | null>(null);
+  // 날씨는 기상청 예보가 시간 단위로만 갱신되고 백엔드도 10분 캐시를 두므로, 온습도처럼 5초마다
+  // 다시 부를 필요가 없다 - 10분 간격이면 충분하다.
+  useFocusEffect(
+    useCallback(() => {
+      const refresh = () => {
+        getWeather()
+          .then(setWeather)
+          .catch((err) => console.warn('날씨 조회 실패:', err));
+      };
+      refresh();
+      const timer = setInterval(refresh, 600000);
+      return () => clearInterval(timer);
+    }, [])
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <Header scale={scale} />
@@ -448,7 +474,7 @@ export default function MainScreen() {
         showsVerticalScrollIndicator={false}
       >
         <TimeCard scale={scale} />
-        <StatusCard scale={scale} summary={summary} />
+        <StatusCard scale={scale} summary={summary} weather={weather} />
         <GoalCard scale={scale} />
         <SleepBanner scale={scale} />
         <AiRecommendationBanner scale={scale} />

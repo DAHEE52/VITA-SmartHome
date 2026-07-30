@@ -181,6 +181,15 @@ sudo systemctl enable --now tapo-mqtt-publisher.service tapo-mqtt-bridge.service
 
 발견된 플러그마다 `tapo-<기기ID>`로 자동 등록된다 - 전력 측정이 되는 기종(P110/P110M/P115)은 `power_monitor`, 안 되는 기종(P100/P105)은 `relay` 타입으로 등록된다. 두 서비스 중 하나만 죽어도 나머지는 계속 도니, 문제 생기면 `sudo journalctl -u tapo-mqtt-publisher -u tapo-mqtt-bridge -f`로 어느 쪽인지 먼저 구분할 것.
 
+### 기상청 날씨 연동 (MainScreen 날씨 카드)
+
+1. [data.go.kr](https://www.data.go.kr) 회원가입 후 로그인.
+2. 검색창에 "단기예보 조회서비스" 검색 → **기상청_단기예보 조회서비스(구)** 선택.
+3. "활용신청" 클릭 → 활용 목적 작성 → 상세기능 중 **초단기예보조회**는 반드시 체크(하늘상태/강수형태 조회에 씀) → 신청. 승인은 보통 즉시~몇 분 내로 난다.
+4. 마이페이지 > 오픈API > **인증키 발급현황**에서 서비스키(Decoding 값)를 확인해 `backend/.env`의 `KMA_API_KEY`에 붙여넣는다.
+
+키가 없어도 앱은 정상 동작한다 - 날씨 칸이 그냥 "-"로 표시될 뿐이다. 현재 격자좌표는 서울(종로구 인근)로 고정돼 있다(`backend/app/routers/weather.py`의 `DEFAULT_NX`/`DEFAULT_NY`) - 집 주소 등록이 실제 좌표까지 저장하게 되면 그때 교체한다.
+
 ## 알아둘 점
 
 - **무료 플랜은 약 1주일 비활성 시 자동 일시정지된다.** 실제 시연/발표 전에 Supabase 대시보드에 접속해서 프로젝트가 paused 상태가 아닌지 미리 확인할 것.
