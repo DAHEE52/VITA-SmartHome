@@ -39,7 +39,10 @@ def test_device_in_learning_phase_reports_is_learning(client, fake_supabase):
     assert status["level"] == "normal"
     assert status["action"] == "none"
 
-    # 학습 중에는 어떤 값을 보내도 전원을 건드리거나 이벤트를 남기지 않는다.
+    # 이 기기는 방금 등록돼서 PIR/온도 등 판단 근거가 될 데이터가 전혀 없으므로(표본 1개짜리
+    # 세션이 막 시작됐을 뿐) 아직 정상이다 - 전원을 건드리거나 이벤트를 남기지 않는다.
+    # (학습 기간 중이라고 무조건 정상인 건 아니다 - test_anomaly_detector.py의
+    # test_still_learning_keeps_flag_but_evaluates_sample_independent_conditions 참고.)
     device_row = next(r for r in fake_supabase._data["devices"] if r["id"] == "tapo-x")
     assert device_row["state"] == "on"
     assert fake_supabase._data.get("device_anomaly_event", []) == []

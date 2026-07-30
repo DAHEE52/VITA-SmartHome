@@ -28,12 +28,12 @@ import { useRooms, Room } from './RoomsContext';
 import { useNotifications } from './NotificationsContext';
 import { useSensors } from './SensorContext';
 import { useEmergencyContacts } from './EmergencyContactsContext';
+import { useHomeSummary } from './HomeSummaryContext';
 import * as api from '../api/client';
 import { AnomalyLevel, AnomalyStatus } from '../api/client';
 import { isFireSuspected, FIRE_NO_MOTION_MINUTES } from '../utils/fireRisk';
 
 const CHECK_INTERVAL_MS = 5000; // 5초마다 센서 기반 화재 감지를 검사한다.
-const MOTION_POLL_MS = 10000; // SleepContext와 같은 주기로 /home/summary의 최근 움직임 시각을 갱신한다.
 const ANOMALY_POLL_MS = 15000; // 기기 이상 패턴(GET /anomaly)을 조회하는 주기.
 // 스펙의 "사용자는 30~60초 내에 '안전' 버튼을 눌러 오탐 여부를 확인" 범위의 중간값.
 export const FIRE_CONFIRM_WAIT_SECONDS = 45;
@@ -94,6 +94,7 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
   const { pushNotification } = useNotifications();
   const { readings, getTemperatureRiseC } = useSensors();
   const { contacts: emergencyContacts } = useEmergencyContacts();
+  const { summary } = useHomeSummary();
 
   const [autoActions, setAutoActions] = useState<AutoAction[]>([]);
   const [emergency, setEmergency] = useState<EmergencyEvent | null>(null);
@@ -130,25 +131,10 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
   const lastAnomalyLevelRef = useRef<Record<string, AnomalyLevel>>({});
   const warningRepromptTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // PIR 최근 움직임 시각(/home/summary.last_motion_at) - SleepContext와 동일한 방식으로 갱신한다.
+  // PIR 최근 움직임 시각(/home/summary.last_motion_at) - HomeSummaryContext가 갱신할 때마다 반영한다.
   useEffect(() => {
-    let cancelled = false;
-    const poll = () => {
-      api
-        .getHomeSummary()
-        .then((summary) => {
-          if (cancelled) return;
-          if (summary.last_motion_at) setLastMotionAtMs(new Date(summary.last_motion_at).getTime());
-        })
-        .catch((err) => console.warn('최근 움직임 조회 실패(화재 감지):', err));
-    };
-    poll();
-    const timer = setInterval(poll, MOTION_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
+    if (summary?.last_motion_at) setLastMotionAtMs(new Date(summary.last_motion_at).getTime());
+  }, [summary]);
 
   // 기기 이상 패턴(GET /anomaly) - 실제 학습/판정/"위험" 등급의 자동 차단+SMS는 전부 서버가 전력
   // 표본을 받는 즉시 처리해두므로, 여기서는 그 결과를 주기적으로 읽어와 등급이 바뀐 기기에만
@@ -165,7 +151,10 @@ export function FireSafetyProvider({ children }: { children: ReactNode }) {
           for (const status of statuses) {
             const prevLevel = lastAnomalyLevelRef.current[status.device_id];
             lastAnomalyLevelRef.current[status.device_id] = status.level;
-            if (status.is_learning || status.level === prevLevel) continue;
+            // is_learning은 "14일 학습 기간이 아직 안 끝났다"는 뜻일 뿐, 판정 자체가 무의미하다는
+            // 뜻이 아니다(백엔드가 학습 기간에도 장시간·무재실·온도 등 개인화 데이터가 필요 없는
+            // 조건은 이미 감시한다) - 그래서 여기서는 등급이 실제로 바뀌었는지만 본다.
+            if (status.level === prevLevel) continue;
 
             const found = findDeviceById(roomsRef.current, status.device_id);
             const roomLabel = found ? roomsRef.current.find((r) => r.id === found.roomId)?.label ?? '' : '';

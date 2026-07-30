@@ -56,24 +56,8 @@ class TestRunningStats:
 
 
 class TestLearningGate:
-    def test_still_learning_returns_normal_regardless_of_conditions(self):
-        engine = RuleBasedAnomalyEngine()
-        profile = _profile(learning_days_ago=3)  # 아직 14일 안 지남
-        context = AnomalyContext(
-            device_id="tapo-1",
-            now=NOW,
-            current_power_w=99999,  # 말도 안 되게 이상한 값이어도
-            profile=profile,
-            minutes_since_motion=999,  # 무움직임도 극단적이어도
-            temperature_rise_c=50,
-        )
-        result = engine.evaluate(context)
-        assert result.is_learning is True
-        assert result.score == 0
-        assert result.level == "normal"
-        assert result.action == "none"
-
     def test_no_profile_is_learning(self):
+        """프로필 자체가 없으면(표본이 하나도 없음) 비교할 게 없으니 무조건 정상."""
         engine = RuleBasedAnomalyEngine()
         context = AnomalyContext(
             device_id="tapo-1", now=NOW, current_power_w=100, profile=None,
@@ -81,6 +65,48 @@ class TestLearningGate:
         )
         result = engine.evaluate(context)
         assert result.is_learning is True
+        assert result.score == 0
+        assert result.level == "normal"
+        assert result.action == "none"
+
+    def test_still_learning_keeps_flag_but_evaluates_sample_independent_conditions(self):
+        """14일 학습 기간이 안 끝났어도(is_learning=True로 표시는 계속되지만), 개인 학습 데이터가
+        필요 없는 조건(장시간·무재실·온도 급상승·급변)은 이미 감시를 시작한다 - 가끔 꽂아 쓰는
+        기기라 표본이 안 쌓여도 최소한의 보호는 있어야 하기 때문."""
+        engine = RuleBasedAnomalyEngine()
+        profile = _profile(
+            learning_days_ago=3,  # 아직 14일 안 지남
+            session_started_at=NOW - timedelta(minutes=70),
+            power_history=[500, 1500, 400, 1500, 300],
+        )
+        context = AnomalyContext(
+            device_id="tapo-1", now=NOW, current_power_w=1500, profile=profile,
+            minutes_since_motion=999, temperature_rise_c=50,
+        )
+        result = engine.evaluate(context)
+        assert result.is_learning is True
+        triggered = {c.name for c in result.conditions if c.triggered}
+        assert triggered == {"long_duration", "no_presence", "temperature_rise", "power_fluctuation"}
+        # 표본 의존 조건(전력 이상 25 + 비정상 시간대 10)이 빠지면 나머지를 다 더해도 75점이라
+        # "위험"(80점 이상)에는 못 닿는다 - 학습이 전혀 안 된 기기가 곧장 자동 차단까지 가지 않는다.
+        assert result.score == 75
+        assert result.level == "warning"
+        assert result.action == "confirm_request"
+
+    def test_still_learning_sample_dependent_conditions_stay_off_without_data(self):
+        """반대로 표본 자체가 필요한 조건(전력 이상 - 모드 표본 2개 이상, 비정상 시간대 - 전체
+        표본 20개 이상)은 학습 기간 여부와 무관하게 각자의 표본 부족 가드로 꺼져 있다."""
+        engine = RuleBasedAnomalyEngine()
+        profile = _profile(learning_days_ago=3)  # modes=[], hourly_frequency 전부 0(기본값)
+        context = AnomalyContext(
+            device_id="tapo-1", now=NOW, current_power_w=99999, profile=profile,
+            minutes_since_motion=None, temperature_rise_c=None,
+        )
+        result = engine.evaluate(context)
+        power_anomaly = next(c for c in result.conditions if c.name == "power_anomaly")
+        unusual_hour = next(c for c in result.conditions if c.name == "unusual_hour")
+        assert power_anomaly.triggered is False
+        assert unusual_hour.triggered is False
 
 
 class TestConditions:
