@@ -171,15 +171,10 @@ export default function SleepModeScreen() {
                 max={60}
                 onChange={(v) => setPreset({ no_motion_minutes: v })}
               />
-              <StepperRow
-                label="확인 알림 대기 시간"
-                value={preset.confirm_wait_minutes}
-                unit="분"
-                step={1}
-                min={1}
-                max={15}
-                onChange={(v) => setPreset({ confirm_wait_minutes: v })}
-              />
+              <Text style={styles.cardSubtitle}>
+                취침 확인 알림에서 "나중에"를 누르면 위 시간만큼 다시 조용해야 재질문하고, "확인"을
+                누르면 12시간 동안 재질문하지 않아요.
+              </Text>
             </Card>
 
             <Card style={styles.card}>

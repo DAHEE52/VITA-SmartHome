@@ -356,34 +356,19 @@ function SleepBanner({ scale }: { scale: number }) {
 }
 
 // "취침 중이신가요?" 확인 모달 - SleepContext.state가 confirming일 때 자동으로 뜬다.
-// 확인 대기 시간(preset.confirm_wait_minutes) 동안 카운트다운을 보여주고, 응답이 없으면
-// SleepContext가 알아서 자동으로 취침 모드를 활성화한다(이 모달은 그때 스스로 닫힌다).
+// "나중에"를 누르면 닫히고, 다시 무움직임 감지 시간만큼 조용해야 재질문한다. "확인"을 누르면 즉시
+// 취침 모드가 활성화되고 이후 12시간은 재질문하지 않는다(SleepContext.confirm/dismiss 참고).
 function SleepConfirmModal() {
-  const { state, preset, confirmStartedAt, confirm, dismiss } = useSleep();
-  const [now, setNow] = useState(() => Date.now());
+  const { state, preset, confirm, dismiss } = useSleep();
 
-  useEffect(() => {
-    if (state !== 'confirming') return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [state]);
-
-  if (state !== 'confirming' || !preset || confirmStartedAt == null) return null;
-
-  const remainingMs = Math.max(0, preset.confirm_wait_minutes * 60000 - (now - confirmStartedAt));
-  const remainingMin = Math.floor(remainingMs / 60000);
-  const remainingSec = Math.floor((remainingMs % 60000) / 1000);
+  if (state !== 'confirming' || !preset) return null;
 
   return (
     <Modal visible transparent animationType="fade">
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>취침 중이신가요?</Text>
-          <Text style={styles.modalSubtitle}>
-            {preset.no_motion_minutes}분간 움직임이 없었어요. 응답이 없으면{' '}
-            {String(remainingMin).padStart(2, '0')}:{String(remainingSec).padStart(2, '0')} 후 자동으로 취침
-            모드가 활성화돼요.
-          </Text>
+          <Text style={styles.modalSubtitle}>{preset.no_motion_minutes}분간 움직임이 없었어요.</Text>
           <View style={styles.modalBottomRow}>
             <AnimatedPressable style={styles.modalCloseButton} onPress={dismiss} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>나중에</Text>

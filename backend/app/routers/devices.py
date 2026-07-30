@@ -81,6 +81,10 @@ def get_pending_commands(device_id: str):
         .order("created_at", desc=False)
         .execute()
     )
+    # relay_node는 센서값을 보내지 않고 2.5초마다 이 엔드포인트만 폴링하므로, 여기서도
+    # last_seen_at을 갱신해야 릴레이의 온라인 여부를 판단할 수 있다 (안 하면 register() 이후
+    # 계속 폴링 중이어도 부팅 시각에 멈춰있어 오프라인처럼 보임).
+    supabase.table("devices").update({"last_seen_at": _now_iso()}).eq("id", device_id).execute()
     return res.data
 
 
