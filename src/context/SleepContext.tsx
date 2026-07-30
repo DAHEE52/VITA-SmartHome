@@ -21,16 +21,18 @@ const TICK_INTERVAL_MS = 10000;
 const SUMMARY_POLL_MS = 10000;
 // 취침 대기 진입 후에도 새벽 활동을 "취침 시간"으로 계속 취급하기 위한 이른 새벽 경계.
 const EARLY_MORNING_HOUR_CUTOFF = 6;
+// "확인"을 누르면 이 시간 동안은 조건이 다시 충족돼도 재질문하지 않는다.
+const CONFIRM_SUPPRESS_HOURS = 12;
 
 export type SleepState = 'idle' | 'waiting' | 'confirming' | 'active';
 
 type SleepContextValue = {
   state: SleepState;
   preset: api.SleepPreset | null;
-  confirmStartedAt: number | null; // 취침 확인 알림이 뜬 시각(ms) - 카운트다운 표시용
+  confirmStartedAt: number | null; // 취침 확인 알림이 뜬 시각(ms)
   sleepStartedAt: number | null; // 취침 모드가 활성화된 시각(ms)
-  confirm: () => void; // "확인" 버튼 - 즉시 취침 모드 활성화
-  dismiss: () => void; // "나중에" 버튼 - 대기 상태로 되돌림(자동 활성화 타이머는 계속 흐름)
+  confirm: () => void; // "확인" 버튼 - 즉시 취침 모드 활성화하고, 이후 12시간은 재질문하지 않음
+  dismiss: () => void; // "나중에" 버튼 - 알림을 닫고, 다시 무움직임 시간만큼 조용해야 재질문함
   setPreset: (patch: Partial<api.SleepPreset>) => void;
 };
 
@@ -64,6 +66,10 @@ export function SleepProvider({ children }: { children: ReactNode }) {
   const [sleepStartedAt, setSleepStartedAt] = useState<number | null>(null);
   const [lastMotionAtMs, setLastMotionAtMs] = useState<number>(0);
   const sleepRecordIdRef = useRef<number | null>(null);
+  // "나중에"를 누른 시각 - 여기서부터 다시 no_motion_minutes만큼 조용해야 재질문한다.
+  const dismissedAtRef = useRef<number | null>(null);
+  // "확인"을 누르면 이 시각까지는 조건이 충족돼도 재질문을 건너뛴다.
+  const suppressedUntilRef = useRef<number>(0);
 
   // setInterval 콜백이 항상 최신 값을 보도록 ref로 들고 있는다(FireSafetyContext와 동일한 패턴).
   const isHomeRef = useRef(isHome);
@@ -179,30 +185,33 @@ export function SleepProvider({ children }: { children: ReactNode }) {
       const lightDevices = findDevices(roomsRef.current, '조명');
       const lightOff = lightDevices.every(({ device }) => !device.on);
       const baseConditionsMet = isHomeRef.current && lightOff && isBedtimeWindow;
-      const noMotionMs = now - lastMotionAtMsRef.current;
+      // "나중에"를 누른 시각도 무움직임 계산의 기준점으로 삼는다 - 그래야 실제 센서 움직임이 없어도
+      // 다시 no_motion_minutes가 통째로 지나야 재질문한다("나중에 누르고 30분 뒤 다시 질문").
+      const motionBaselineMs = Math.max(lastMotionAtMsRef.current, dismissedAtRef.current ?? 0);
+      const noMotionMs = now - motionBaselineMs;
+      const suppressed = now < suppressedUntilRef.current;
 
       switch (stateRef.current) {
         case 'idle':
           if (baseConditionsMet) {
-            if (noMotionMs >= p.no_motion_minutes * 60000) enterConfirming();
+            if (noMotionMs >= p.no_motion_minutes * 60000 && !suppressed) enterConfirming();
             else setState('waiting');
           }
           break;
         case 'waiting':
           if (!baseConditionsMet) {
             setState('idle');
-          } else if (noMotionMs >= p.no_motion_minutes * 60000) {
+          } else if (noMotionMs >= p.no_motion_minutes * 60000 && !suppressed) {
             enterConfirming();
           }
           break;
         case 'confirming': {
           const confirmStart = confirmStartedAtRef.current ?? now;
           // 확인 알림이 뜬 뒤에 새로 움직임이 감지되면 "깨어있다"는 뜻이므로 대기 상태로 복귀.
+          // (이 상태는 "나중에"/"확인" 버튼으로만 벗어난다 - 응답 없다고 자동으로 활성화하지 않는다.)
           if (lastMotionAtMsRef.current > confirmStart) {
             setState('idle');
             setConfirmStartedAt(null);
-          } else if (now - confirmStart >= p.confirm_wait_minutes * 60000) {
-            activateSleepMode();
           }
           break;
         }
@@ -217,13 +226,21 @@ export function SleepProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timer);
   }, []);
 
+  // "확인" - 즉시 취침 모드를 활성화하고, 이후 12시간 동안은 조건이 다시 충족돼도 재질문하지 않는다.
   const confirm = () => {
-    if (stateRef.current === 'confirming') activateSleepMode();
+    if (stateRef.current !== 'confirming') return;
+    suppressedUntilRef.current = Date.now() + CONFIRM_SUPPRESS_HOURS * 60 * 60 * 1000;
+    activateSleepMode();
   };
 
-  // "나중에" - 확인 대기 타이머는 그대로 흐르게 두고(응답 없으면 스펙대로 자동 활성화), 배너만 닫는
-  // 용도로만 쓰인다. 상태 자체는 confirming을 유지한다.
-  const dismiss = () => {};
+  // "나중에" - 알림 창을 닫고 대기 상태로 되돌린다. 지금 이 순간을 새 기준점으로 삼아서, 다시
+  // no_motion_minutes만큼 조용해야만 재질문한다(그 전에 실제 움직임이 감지되면 기준점이 그걸로 대체됨).
+  const dismiss = () => {
+    if (stateRef.current !== 'confirming') return;
+    dismissedAtRef.current = Date.now();
+    setConfirmStartedAt(null);
+    setState('waiting');
+  };
 
   const setPreset = (patch: Partial<api.SleepPreset>) => {
     const prev = preset;
