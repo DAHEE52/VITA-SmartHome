@@ -6,6 +6,7 @@ supabase
 pydantic-settings
 tzdata
 
-# tapo_power_bridge.py 전용 (Tapo 스마트플러그로 전력 측정할 때만 필요)
+# tapo_mqtt_publisher.py / tapo_mqtt_bridge.py 전용 (Tapo 스마트플러그를 라즈베리파이에서 쓸 때만 필요)
 python-dotenv
 tapo
+aiomqtt

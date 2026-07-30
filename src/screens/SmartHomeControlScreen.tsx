@@ -1,10 +1,11 @@
 // 시안 4 - 스마트홈 제어 화면.
-// 구조: 활성화된 기기 수 카드 / 목표 온도 카드 / 스마트 플러그(기기) 카드 2열 그리드(마지막 칸은
-// 스마트 플러그 연결 버튼, 스크롤 가능) / 하단 네비(홈)
+// 구조: 활성화된 기기 수 카드 / 스마트 플러그(기기) 카드 2열 그리드(마지막 칸은 주변 기기 감지
+// 버튼, 스크롤 가능) / 하단 네비(홈). 목표 온도 조절 UI는 이 화면에서 제거했다 - room.targetTemp
+// 자체는 AutomationContext의 온도 유지 자동화가 계속 쓰므로 RoomsContext에는 남아있다.
 // VITA는 원룸 전용 서비스라 방은 항상 정확히 하나만 존재한다(RoomsContext가 자동 보장) - 그래서
 // 이 화면엔 방을 추가/삭제하는 UI가 없고, 그리드는 방이 아니라 그 방에 연결된 기기(스마트 플러그)를
-// 카드로 보여준다. "+" 버튼을 누르면 근처에서 통신 중인 스마트 플러그 목록이 뜨고, 연결하면 카드로
-// 나타난다. 카드를 누르면 이름을 직접 지정할 수 있고, 전력 측정기(power_monitor)면 실시간 W도 보인다.
+// 카드로 보여준다. "+" 버튼을 누르면 주변에 감지되는 기기 목록이 뜨고, 등록하면 카드로 나타난다.
+// 카드를 누르면 이름을 직접 지정할 수 있고, 전력 측정기(power_monitor)면 실시간 W도 보인다.
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -22,7 +23,7 @@ import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { PlusIcon } from '../components/icons';
-import { useRooms, Room, Device } from '../context/RoomsContext';
+import { useRooms, Device } from '../context/RoomsContext';
 import { useAppWindowDimensions } from '../hooks/useAppWindowDimensions';
 import * as api from '../api/client';
 
@@ -31,9 +32,6 @@ const REFERENCE_HEIGHT = 820;
 const MIN_SCALE = 0.7;
 const SCREEN_PADDING = 20;
 const GRID_GAP = 14;
-// 목표 온도 조절 범위 - 냉/난방기 목표 설정치로 흔히 쓰이는 범위 정도로 제한한다.
-const MIN_TARGET_TEMP = 16;
-const MAX_TARGET_TEMP = 30;
 // 전력 측정기(power_monitor) 카드의 실시간 W를 이 주기로 다시 조회한다. 실기기(power_relay_node
 // 등)가 30초마다 값을 push하므로 그보다 촘촘히 조회해봐야 새 값이 없다.
 const WATT_POLL_INTERVAL_MS = 20000;
@@ -44,43 +42,6 @@ function ActiveDevicesCard({ scale, count }: { scale: number; count: number }) {
     <Card style={[styles.activeCard, { paddingVertical: 24 * scale }]}>
       <Text style={[styles.activeLabel, { fontSize: 20 * scale }]}>현재 활성화된 기기</Text>
       <Text style={[styles.activeCount, { fontSize: 40 * scale, marginTop: 10 * scale }]}>{count}대</Text>
-    </Card>
-  );
-}
-
-// 방의 목표 온도를 조절하는 카드. 자동화 규칙(외출/외박/루틴)이 이 값을 자동으로 바꾸기도 한다.
-function TargetTempCard({
-  room,
-  scale,
-  onSetTargetTemp,
-}: {
-  room: Room | null;
-  scale: number;
-  onSetTargetTemp: (roomId: string, temp: number) => void;
-}) {
-  if (!room) return null;
-  return (
-    <Card style={[styles.tempCard, { paddingVertical: 16 * scale, paddingHorizontal: 20 * scale }]}>
-      <Text style={[styles.tempLabel, { fontSize: 14 * scale }]}>목표 온도</Text>
-      <View style={styles.tempStepperRow}>
-        <AnimatedPressable
-          style={styles.tempStepButton}
-          onPress={() => onSetTargetTemp(room.id, Math.max(MIN_TARGET_TEMP, room.targetTemp - 1))}
-          activeOpacity={0.7}
-          hitSlop={8}
-        >
-          <Text style={styles.tempStepText}>−</Text>
-        </AnimatedPressable>
-        <Text style={styles.tempValue}>{room.targetTemp}°C</Text>
-        <AnimatedPressable
-          style={styles.tempStepButton}
-          onPress={() => onSetTargetTemp(room.id, Math.min(MAX_TARGET_TEMP, room.targetTemp + 1))}
-          activeOpacity={0.7}
-          hitSlop={8}
-        >
-          <Text style={styles.tempStepText}>＋</Text>
-        </AnimatedPressable>
-      </View>
     </Card>
   );
 }
@@ -141,7 +102,7 @@ function DeviceCard({
   );
 }
 
-// 연결된 스마트 플러그(회색 박스) 대신 마지막 칸에 뜨는 원형 "+" 버튼. 근처 스마트 플러그 목록을 연다.
+// 연결된 스마트 플러그(회색 박스) 대신 마지막 칸에 뜨는 원형 "+" 버튼. 주변 기기 감지 목록을 연다.
 function AddDeviceButton({ scale, cellSize, onPress }: { scale: number; cellSize: number; onPress: () => void }) {
   const size = 56 * scale;
   return (
@@ -150,7 +111,7 @@ function AddDeviceButton({ scale, cellSize, onPress }: { scale: number; cellSize
         style={[styles.addCircle, { width: size, height: size, borderRadius: size / 2 }]}
         activeOpacity={0.7}
         onPress={onPress}
-        accessibilityLabel="스마트 플러그 연결"
+        accessibilityLabel="주변 기기 감지"
       >
         <PlusIcon size={24 * scale} />
       </AnimatedPressable>
@@ -158,11 +119,11 @@ function AddDeviceButton({ scale, cellSize, onPress }: { scale: number; cellSize
   );
 }
 
-// "+" 버튼을 누르면 뜨는 창 - 근처에서 통신 중인(이미 서버에 자기소개를 마쳤지만 아직 방에 안 묶인)
-// 스마트 플러그 목록을 보여준다. Tapo 브릿지(backend/tapo_power_bridge.py)가 발견한 Tapo 플러그도
-// 같은 방식(자동 register)으로 여기 나타나므로 ESP32 기기와 동일하게 취급된다.
-// 목록에서 기기를 탭하면: 1) 그 자리에서 연결하고 2) 곧바로 이름 설정 단계로 넘어가서, 사용자가
-// "이름 없는 기기를 눌러서 연결 → 나중에 카드 찾아서 이름 바꾸기" 두 단계를 거칠 필요 없이
+// "+" 버튼을 누르면 뜨는 창 - 주변에 감지되는(이미 서버에 자기소개를 마쳤지만 아직 방에 안 묶인)
+// 기기 목록을 보여준다. Tapo 브릿지(backend/tapo_mqtt_publisher.py + tapo_mqtt_bridge.py)가
+// 찾은 Tapo 스마트 콘센트도 같은 방식(자동 register)으로 여기 나타나므로 ESP32 기기와 동일하게
+// 취급된다. 목록에서 기기를 탭하면: 1) 그 자리에서 등록하고 2) 곧바로 이름 설정 단계로 넘어가서,
+// 사용자가 "이름 없는 기기를 눌러서 등록 → 나중에 카드 찾아서 이름 바꾸기" 두 단계를 거칠 필요 없이
 // 한 흐름으로 끝낸다. 이름을 저장하면 목록으로 돌아가 다른 기기를 이어서 추가할 수 있다.
 function ConnectDeviceModal({
   visible,
@@ -217,7 +178,7 @@ function ConnectDeviceModal({
         <Pressable style={styles.modalCard} onPress={() => {}}>
           {namingDevice ? (
             <>
-              <Text style={styles.modalTitle}>연결됐어요!</Text>
+              <Text style={styles.modalTitle}>등록됐어요!</Text>
               <Text style={styles.deviceSectionHint}>바로 사용할 이름을 정해주세요.</Text>
               <View style={styles.renameRow}>
                 <TextInput
@@ -241,11 +202,11 @@ function ConnectDeviceModal({
             </>
           ) : (
             <>
-              <Text style={styles.modalTitle}>스마트 플러그 연결</Text>
+              <Text style={styles.modalTitle}>주변 기기 감지</Text>
               <Text style={styles.deviceSectionHint}>
                 {nearby.length > 0
-                  ? '통신 중인 스마트 플러그예요. 연결할 기기를 골라주세요.'
-                  : '근처에서 통신 중인 스마트 플러그가 없어요. 전원을 확인해 주세요.'}
+                  ? '주변에 감지되는 기기예요. 등록할 기기를 골라주세요.'
+                  : '주변에 감지되는 기기가 없어요. 전원을 확인해 주세요.'}
               </Text>
 
               <ScrollView style={styles.nearbyList}>
@@ -263,7 +224,7 @@ function ConnectDeviceModal({
                         disabled={connected}
                       >
                         <Text style={[styles.connectButtonText, connected && styles.connectButtonTextDone]}>
-                          {connected ? '연결됨' : '연결'}
+                          {connected ? '등록됨' : '등록'}
                         </Text>
                       </AnimatedPressable>
                     </View>
@@ -357,7 +318,7 @@ function DeviceSettingsModal({
           {confirmDisconnect ? (
             <>
               <Text style={styles.modalTitle}>{device?.name} 연결을 해제할까요?</Text>
-              <Text style={styles.confirmSubtitle}>다시 연결하려면 스마트 플러그 연결에서 새로 골라야 해요.</Text>
+              <Text style={styles.confirmSubtitle}>다시 연결하려면 주변 기기 감지에서 새로 골라야 해요.</Text>
               <View style={styles.modalBottomRow}>
                 <AnimatedPressable
                   style={styles.modalCloseButton}
@@ -459,8 +420,7 @@ export default function SmartHomeControlScreen() {
   const scale = Math.min(1, Math.max(MIN_SCALE, height / REFERENCE_HEIGHT));
   // 정확히 정사각형이 되도록 %/aspectRatio 대신 실제 픽셀 크기를 계산해서 쓴다.
   const cellSize = (width - SCREEN_PADDING * 2 - GRID_GAP) / 2;
-  const { rooms, connectDevice, renameDevice, deleteDevice, toggleDeviceMode, toggleDevicePower, setRoomTargetTemp } =
-    useRooms();
+  const { rooms, connectDevice, renameDevice, deleteDevice, toggleDeviceMode, toggleDevicePower } = useRooms();
   const room = rooms[0] ?? null;
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [settingsDeviceId, setSettingsDeviceId] = useState<string | null>(null);
@@ -472,8 +432,6 @@ export default function SmartHomeControlScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={[styles.content, { paddingTop: 20 * scale }]}>
         <ActiveDevicesCard scale={scale} count={activeCount} />
-        <View style={{ height: 12 * scale }} />
-        <TargetTempCard room={room} scale={scale} onSetTargetTemp={setRoomTargetTemp} />
         <View style={{ height: 16 * scale }} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 * scale }}>
           <View style={[styles.grid, { rowGap: GRID_GAP }]}>
@@ -533,12 +491,6 @@ const styles = StyleSheet.create({
   activeCount: {
     fontFamily: fonts.jalnan,
     color: colors.text,
-  },
-
-  tempCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
 
   grid: {
@@ -678,36 +630,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     backgroundColor: colors.orange,
-  },
-  tempLabel: {
-    fontFamily: fonts.jalnan,
-    fontSize: 14,
-    color: colors.text,
-  },
-  tempStepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  tempStepButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tempStepText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  tempValue: {
-    fontFamily: fonts.jalnan,
-    fontSize: 15,
-    color: colors.text,
-    minWidth: 46,
-    textAlign: 'center',
   },
   deviceSectionHint: {
     fontSize: 12,

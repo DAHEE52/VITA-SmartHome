@@ -79,11 +79,24 @@ class _QueryBuilder:
                 return False
         return True
 
+    def _compute_latest_sensor_readings(self):
+        """실제 DB의 latest_sensor_readings 뷰(device_id/metric별 DISTINCT ON 최신값)를 흉내낸다 -
+        sensor_readings 더미 데이터에서 (device_id, metric)별로 recorded_at이 가장 큰 행만 남긴다."""
+        source = self._store.get("sensor_readings", [])
+        latest: dict[tuple, dict] = {}
+        for row in source:
+            key = (row.get("device_id"), row.get("metric"))
+            current = latest.get(key)
+            if current is None or row["recorded_at"] > current["recorded_at"]:
+                latest[key] = row
+        return list(latest.values())
+
     def execute(self):
         rows = self._store.setdefault(self._table, [])
 
         if self._op in (None, "select"):
-            result = [dict(r) for r in rows if self._matches(r)]
+            source_rows = self._compute_latest_sensor_readings() if self._table == "latest_sensor_readings" else rows
+            result = [dict(r) for r in source_rows if self._matches(r)]
             if self._order:
                 col, desc = self._order
                 result.sort(key=lambda r: r[col], reverse=desc)

@@ -32,20 +32,14 @@ def _now_iso() -> str:
 
 
 def _latest_reading_per_device(metric: str) -> dict[str, float]:
-    """주어진 metric에 대해 device_id별 가장 최근 값만 뽑아낸다."""
+    """주어진 metric에 대해 device_id별 가장 최근 값만 뽑아낸다.
+    latest_sensor_readings 뷰(DB에서 기기/지표별 DISTINCT ON으로 미리 계산됨)를 조회하므로,
+    연결된 센서 수나 누적된 데이터량이 늘어나도 항상 정확하다 - 예전에는 "최근 200행"만 보고
+    기기별 첫 값을 취하는 방식이라, 기기 수가 많아지면 어떤 기기는 그 200행 안에 아예 안 걸려
+    최신값이 통째로 빠질 수 있었다(자주 push하는 기기가 드물게 push하는 기기의 값을 밀어냄)."""
     supabase = get_supabase()
-    res = (
-        supabase.table("sensor_readings")
-        .select("device_id, value, recorded_at")
-        .eq("metric", metric)
-        .order("recorded_at", desc=True)
-        .limit(200)
-        .execute()
-    )
-    latest: dict[str, float] = {}
-    for row in res.data:
-        latest.setdefault(row["device_id"], row["value"])
-    return latest
+    res = supabase.table("latest_sensor_readings").select("device_id, value").eq("metric", metric).execute()
+    return {row["device_id"]: row["value"] for row in res.data}
 
 
 def _latest_motion_at() -> str | None:
