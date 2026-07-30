@@ -42,7 +42,7 @@ FastAPI 백엔드(`VITA/backend/`)와 HTTP로 통신하는 ESP32 펌웨어. 각 
 - `setup()`: WiFi 연결 → `POST /devices/register` 1회 호출로 기기 등록.
 - `loop()` 맨 위에서 `if (WiFi.status() != WL_CONNECTED) WiFi.reconnect();` — 라우터 순단 시 자동 복구(없으면 시연 중 노드가 멈춘 채로 방치됨).
 - JSON은 **ArduinoJson v7** (`JsonDocument`, `serializeJson`/`deserializeJson`) 사용.
-- 인증: 모든 요청에 헤더 `X-Device-Key: <config.h의 DEVICE_KEY>` 포함. FastAPI `.env`의 `DEVICE_API_KEY`와 반드시 동일해야 함.
+- 인증: 모든 요청에 헤더 `X-Device-Key: <config.h의 DEVICE_KEY>` 포함. 값은 기기마다 자유롭게 정해도 된다 - 백엔드가 그 기기의 첫 등록 요청에 실린 값을 그대로 그 기기의 영구 키로 저장하고(trust-on-first-use), 이후부터는 그 값으로만 인증한다. 기기 하나의 키가 유출돼도 다른 기기를 사칭할 수 없다. 키를 재발급하려면 백엔드에서 `DELETE /devices/{device_id}`로 그 기기를 지운 뒤 재부팅시키면 된다.
 
 ## 안전 경고
 

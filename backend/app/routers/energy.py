@@ -49,7 +49,12 @@ def _cumulative_readings(device_id: str) -> list[tuple[datetime, float]]:
 
 
 def _bucket_usage(readings: list[tuple[datetime, float]], period: Period) -> dict[str, float]:
-    """버킷별 마지막 누적값(PZEM 적산 전력량)을 구한 뒤, 인접 버킷 간 차분해서 사용량을 계산한다."""
+    """버킷별 마지막 누적값(적산 전력량)을 구한 뒤, 인접 버킷 간 차분해서 사용량을 계산한다.
+
+    누적값이 항상 증가한다고 가정하지 않는다 - 기기 재부팅(PZEM 카운터 리셋)이나 Tapo 자체
+    누적치처럼 주기적으로 0 근처로 리셋되는 값도 들어올 수 있다. 새 값이 이전 값보다 작으면
+    "리셋 이후 다시 쌓인 양"으로 보고 그 값 자체를 이번 구간 사용량으로 취급한다 - 그냥
+    (value - prev_value)를 쓰면 리셋 시점에 음수가 나와 사용량이 깎여 보이는 버그가 생긴다."""
     last_in_bucket: dict[str, float] = {}
     for dt, value in readings:  # readings는 시간순 정렬 -> 마지막 대입이 해당 버킷의 최신값
         last_in_bucket[_bucket_key(dt, period)] = value
@@ -58,7 +63,12 @@ def _bucket_usage(readings: list[tuple[datetime, float]], period: Period) -> dic
     prev_value = None
     for key in sorted(last_in_bucket.keys()):
         value = last_in_bucket[key]
-        usage[key] = (value - prev_value) if prev_value is not None else 0.0
+        if prev_value is None:
+            usage[key] = 0.0
+        elif value < prev_value:
+            usage[key] = value
+        else:
+            usage[key] = value - prev_value
         prev_value = value
     return usage
 

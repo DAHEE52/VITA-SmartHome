@@ -13,13 +13,20 @@ create table if not exists devices (
   type text not null check (type in ('env_sensor', 'relay', 'power_monitor', 'presence_cam')),
   label text,
   state text not null default 'off',
-  last_seen_at timestamptz
+  last_seen_at timestamptz,
+  device_key text
 );
 
 -- 마이그레이션: 이미 devices 테이블이 만들어진(예전 room text 컬럼을 쓰던) 기존 프로젝트용.
 -- 새 프로젝트에서는 위 create table로 처음부터 room_id로 생성되므로 아래는 그냥 no-op.
 alter table devices add column if not exists room_id bigint references rooms(id) on delete set null;
 alter table devices drop column if exists room;
+
+-- 마이그레이션: 기기별 개별 인증 키(trust-on-first-use) 도입 전 기존 프로젝트용.
+-- 새 프로젝트에서는 위 create table에 이미 포함되므로 그냥 no-op. app/deps.py의
+-- verify_device_key 참고 - 이 컬럼이 비어있는(NULL) 기기는 다음 요청의 X-Device-Key를
+-- 그대로 자기 키로 저장한다(기존에 공유 키를 쓰던 기기들이 자연스럽게 개별 키로 전환됨).
+alter table devices add column if not exists device_key text;
 
 -- 마이그레이션: presence_cam(카메라 재실 감지 노드) 타입 추가 전에 만들어진 기존 프로젝트용.
 -- 새 프로젝트에서는 위 create table의 check에 이미 포함되므로 그냥 no-op.
@@ -50,6 +57,24 @@ create table if not exists device_commands (
 
 create index if not exists idx_readings_device_time on sensor_readings(device_id, recorded_at desc);
 create index if not exists idx_commands_device_status on device_commands(device_id, status);
+
+-- 확장(연결되는 센서/기기 수, 쌓이는 데이터량이 늘어나는 것) 대비 인덱스 2개.
+-- (1) device_id+metric으로 필터링하고 recorded_at으로 정렬하는 조회(기기별 최신값 뷰, 전력량 누적
+--     이력 조회)를 위한 복합 인덱스 - 기기 수·누적 기간이 늘어날수록 효과가 커진다.
+create index if not exists idx_readings_device_metric_time on sensor_readings(device_id, metric, recorded_at desc);
+-- (2) metric+value로 필터링하고 recorded_at으로 정렬하는 조회(예: PIR "마지막 움직임 감지 시각")를 위한 인덱스.
+create index if not exists idx_readings_metric_value_time on sensor_readings(metric, value, recorded_at desc);
+
+-- 기기별/지표별 "가장 최근 값" 하나씩만 뽑아주는 뷰.
+-- 기존 백엔드 코드는 "최근 200행을 가져와서 기기별로 처음 나오는 값만 취한다"는 방식이었는데,
+-- 센서(기기) 수가 늘어나면 어떤 기기는 그 200행 안에 아예 안 걸려서 값이 통째로 빠지는 문제가
+-- 생길 수 있었다(예: 자주 push하는 기기가 많아지면 드물게 push하는 기기의 최신값이 밀려남).
+-- DISTINCT ON으로 DB가 직접 기기·지표별 최신 값을 보장하도록 바꿔서, 기기 수·데이터량과 무관하게
+-- 항상 정확하다. idx_readings_device_metric_time 인덱스 덕분에 데이터가 아무리 쌓여도 빠르다.
+create or replace view latest_sensor_readings as
+select distinct on (device_id, metric) device_id, metric, value, recorded_at
+from sensor_readings
+order by device_id, metric, recorded_at desc;
 
 -- 캘린더(DAILY/SPECIAL 일정) - CalendarScreen/AutomationContext가 사용.
 create table if not exists schedule_items (

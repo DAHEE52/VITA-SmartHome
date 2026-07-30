@@ -69,8 +69,7 @@ void registerDevice() {
   JsonDocument doc;
   doc["device_id"] = DEVICE_ID;
   doc["type"] = "power_monitor";
-  doc["room"] = ROOM;
-  doc["label"] = ROOM " 기기";
+  doc["label"] = "기기";
   // setup()에서 이미 릴레이를 강제로 꺼둔 뒤 이 함수가 불리므로, 부팅/재부팅 시 실제 물리
   // 상태(off)를 함께 알려서 DB가 정전 전 상태(예: "on")로 낡아있지 않게 동기화한다.
   doc["state"] = "off";

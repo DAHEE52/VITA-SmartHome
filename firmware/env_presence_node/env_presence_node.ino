@@ -66,8 +66,7 @@ void registerDevice() {
   JsonDocument doc;
   doc["device_id"] = DEVICE_ID;
   doc["type"] = "env_sensor";
-  doc["room"] = ROOM;
-  doc["label"] = ROOM " 온습도/재실 센서";
+  doc["label"] = "온습도/재실 센서";
 
   int status = postJson("/devices/register", doc);
   Serial.print("등록 응답 코드: ");

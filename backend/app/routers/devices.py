@@ -1,13 +1,13 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Header
 
-from app.deps import require_device_key
+from app.deps import verify_device_key
 from app.schemas import ClassifyIn, CommandAck, DeviceRegister, PendingCommand, ReadingsIn
 from app.supabase_client import get_supabase
 
-router = APIRouter(prefix="/devices", tags=["devices"], dependencies=[Depends(require_device_key)])
+router = APIRouter(prefix="/devices", tags=["devices"])
 
 
 def _now_iso() -> str:
@@ -15,7 +15,8 @@ def _now_iso() -> str:
 
 
 @router.post("/register")
-def register_device(body: DeviceRegister):
+def register_device(body: DeviceRegister, x_device_key: str = Header(...)):
+    verify_device_key(body.device_id, x_device_key)
     supabase = get_supabase()
     now_iso = _now_iso()
     existing = supabase.table("devices").select("id").eq("id", body.device_id).execute()
@@ -39,6 +40,9 @@ def register_device(body: DeviceRegister):
                 "label": label,
                 "state": body.state or "off",
                 "last_seen_at": now_iso,
+                # 새 기기는 이 요청의 키로 확정 - verify_device_key가 신규 기기를 그냥 통과시켜준
+                # 대신, 여기서 실제로 저장해야 다음 요청부터 이 키로만 인증된다.
+                "device_key": x_device_key,
             }
         ).execute()
 
@@ -46,7 +50,8 @@ def register_device(body: DeviceRegister):
 
 
 @router.post("/{device_id}/readings")
-def post_readings(device_id: str, body: ReadingsIn):
+def post_readings(device_id: str, body: ReadingsIn, x_device_key: str = Header(...)):
+    verify_device_key(device_id, x_device_key)
     supabase = get_supabase()
     rows = [
         {"device_id": device_id, "metric": r.metric, "value": r.value}
@@ -59,9 +64,10 @@ def post_readings(device_id: str, body: ReadingsIn):
 
 
 @router.post("/{device_id}/classify")
-def post_classification(device_id: str, body: ClassifyIn):
+def post_classification(device_id: str, body: ClassifyIn, x_device_key: str = Header(...)):
     """생활 패턴 비전 모델(life_pattern_vision_node)이 분류 결과를 push하는 엔드포인트.
     아직 모델이 배포되기 전에는 아무 기기도 이 경로를 호출하지 않는다."""
+    verify_device_key(device_id, x_device_key)
     supabase = get_supabase()
     supabase.table("classification_events").insert(
         {"device_id": device_id, "model": body.model, "label": body.label, "confidence": body.confidence}
@@ -71,7 +77,8 @@ def post_classification(device_id: str, body: ClassifyIn):
 
 
 @router.get("/{device_id}/commands/pending", response_model=list[PendingCommand])
-def get_pending_commands(device_id: str):
+def get_pending_commands(device_id: str, x_device_key: str = Header(...)):
+    verify_device_key(device_id, x_device_key)
     supabase = get_supabase()
     res = (
         supabase.table("device_commands")
@@ -89,7 +96,8 @@ def get_pending_commands(device_id: str):
 
 
 @router.post("/{device_id}/commands/{command_id}/ack")
-def ack_command(device_id: str, command_id: int, body: CommandAck):
+def ack_command(device_id: str, command_id: int, body: CommandAck, x_device_key: str = Header(...)):
+    verify_device_key(device_id, x_device_key)
     supabase = get_supabase()
     cmd_res = (
         supabase.table("device_commands").select("command").eq("id", command_id).single().execute()

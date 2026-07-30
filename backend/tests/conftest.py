@@ -63,6 +63,11 @@ class _QueryBuilder:
         self._filters.append(("eq", col, None if val == "null" else val))
         return self
 
+    def like(self, col, pattern):
+        # 라우터가 접두사 매칭(예: "tapo-%")에만 like를 쓰므로 그 형태만 지원한다.
+        self._filters.append(("like", col, pattern))
+        return self
+
     def order(self, col, desc=False):
         self._order = (col, desc)
         return self
@@ -77,13 +82,36 @@ class _QueryBuilder:
                 return False
             if kind == "in" and row.get(col) not in val:
                 return False
+            if kind == "like":
+                # SQL LIKE의 %를 정규식 .*로만 바꿔서 지원(현재 쓰이는 접두사 패턴 기준으로 충분).
+                # %로 먼저 나눠서 각 조각을 이스케이프해야 한다 - re.escape는 %를 이스케이프하지
+                # 않으므로 이스케이프 후에 치환하면 리터럴 "%"를 찾다가 매칭에 실패한다.
+                import re
+
+                parts = val.split("%")
+                regex = "^" + ".*".join(re.escape(p) for p in parts) + "$"
+                if not re.match(regex, str(row.get(col, ""))):
+                    return False
         return True
+
+    def _compute_latest_sensor_readings(self):
+        """실제 DB의 latest_sensor_readings 뷰(device_id/metric별 DISTINCT ON 최신값)를 흉내낸다 -
+        sensor_readings 더미 데이터에서 (device_id, metric)별로 recorded_at이 가장 큰 행만 남긴다."""
+        source = self._store.get("sensor_readings", [])
+        latest: dict[tuple, dict] = {}
+        for row in source:
+            key = (row.get("device_id"), row.get("metric"))
+            current = latest.get(key)
+            if current is None or row["recorded_at"] > current["recorded_at"]:
+                latest[key] = row
+        return list(latest.values())
 
     def execute(self):
         rows = self._store.setdefault(self._table, [])
 
         if self._op in (None, "select"):
-            result = [dict(r) for r in rows if self._matches(r)]
+            source_rows = self._compute_latest_sensor_readings() if self._table == "latest_sensor_readings" else rows
+            result = [dict(r) for r in source_rows if self._matches(r)]
             if self._order:
                 col, desc = self._order
                 result.sort(key=lambda r: r[col], reverse=desc)
@@ -140,5 +168,7 @@ def fake_supabase():
 def client(fake_supabase):
     with patch("app.routers.rooms.get_supabase", return_value=fake_supabase), patch(
         "app.routers.devices.get_supabase", return_value=fake_supabase
+    ), patch("app.routers.energy.get_supabase", return_value=fake_supabase), patch(
+        "app.deps.get_supabase", return_value=fake_supabase
     ):
         yield TestClient(app)

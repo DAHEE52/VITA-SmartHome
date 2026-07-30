@@ -32,20 +32,14 @@ def _now_iso() -> str:
 
 
 def _latest_reading_per_device(metric: str) -> dict[str, float]:
-    """주어진 metric에 대해 device_id별 가장 최근 값만 뽑아낸다."""
+    """주어진 metric에 대해 device_id별 가장 최근 값만 뽑아낸다.
+    latest_sensor_readings 뷰(DB에서 기기/지표별 DISTINCT ON으로 미리 계산됨)를 조회하므로,
+    연결된 센서 수나 누적된 데이터량이 늘어나도 항상 정확하다 - 예전에는 "최근 200행"만 보고
+    기기별 첫 값을 취하는 방식이라, 기기 수가 많아지면 어떤 기기는 그 200행 안에 아예 안 걸려
+    최신값이 통째로 빠질 수 있었다(자주 push하는 기기가 드물게 push하는 기기의 값을 밀어냄)."""
     supabase = get_supabase()
-    res = (
-        supabase.table("sensor_readings")
-        .select("device_id, value, recorded_at")
-        .eq("metric", metric)
-        .order("recorded_at", desc=True)
-        .limit(200)
-        .execute()
-    )
-    latest: dict[str, float] = {}
-    for row in res.data:
-        latest.setdefault(row["device_id"], row["value"])
-    return latest
+    res = supabase.table("latest_sensor_readings").select("device_id, value").eq("metric", metric).execute()
+    return {row["device_id"]: row["value"] for row in res.data}
 
 
 def _latest_motion_at() -> str | None:
@@ -195,10 +189,19 @@ def delete_room(room_id: int):
 
 @router.get("/devices/unassigned", response_model=list[DeviceOut])
 def get_unassigned_devices():
-    """room_id가 없는 기기 목록 - 실제 ESP32가 부팅 시 /devices/register로 자기소개는 마쳤지만
-    아직 앱에서 방에 배정되지 않은 상태. 앱의 "기기 추가"가 여기서 골라 PATCH로 배정한다."""
+    """room_id가 없는 "스마트 콘센트" 목록 - 앱의 "주변 기기 감지"가 여기서 골라 PATCH로 배정한다.
+    지금 단계에서 실제로 감지 대상인 스마트 콘센트는 라즈베리파이의 Tapo MQTT 브릿지가 등록한
+    기기(id가 "tapo-"로 시작, tapo_mqtt_publisher.py의 _device_id_for 참고)뿐이다 - ESP32 센서
+    노드(온습도/재실 등)나 예전 목업/테스트로 남은 기기는 실제로 통신 중인 스마트 콘센트가 아니므로
+    이 목록에서 제외한다."""
     supabase = get_supabase()
-    res = supabase.table("devices").select("id, label, type, state, room_id").is_("room_id", "null").execute()
+    res = (
+        supabase.table("devices")
+        .select("id, label, type, state, room_id")
+        .is_("room_id", "null")
+        .like("id", "tapo-%")
+        .execute()
+    )
     return [
         DeviceOut(id=d["id"], label=d["label"], type=d["type"], state=d["state"], room_id=d["room_id"])
         for d in res.data

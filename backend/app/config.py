@@ -1,17 +1,19 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # Supabase 프로젝트 설정법: SETUP.md 참고
     supabase_url: str
     supabase_service_key: str
-    # ESP32 펌웨어 쪽 config.h의 DEVICE_KEY와 동일한 값이어야 함
-    device_api_key: str
+    # DEVICE_API_KEY는 여기서 안 읽는다 - app/deps.py의 verify_device_key가 기기별 개별 키를
+    # DB(devices.device_key)에서 직접 확인하기 때문. .env의 DEVICE_API_KEY는 이제 "새 기기가
+    # 처음 등록할 때 들고 오는 초기 키"로서 firmware config.h 쪽에서만 의미가 있다.
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"  # tapo_power_bridge.py 등 다른 스크립트가 같은 .env를 공유하므로,
-        # Settings에 없는 키(TAPO_* 등)가 있어도 에러 내지 않고 무시한다.
+    # .env 하나를 tapo_mqtt_publisher.py/tapo_mqtt_bridge.py(TAPO_*, MQTT_*, API_BASE_URL 등)와
+    # 공유해서 쓰는 배포가 흔하다(예: 라즈베리파이 한 대에서 백엔드+Tapo 브릿지를 같이 돌리는 경우).
+    # extra="ignore"가 없으면 이 클래스에 선언 안 된 키가 .env에 하나만 있어도 서버가 아예 안 뜬다 -
+    # 실제로 TAPO_EMAIL/PASSWORD, 이후 TAPO_*/MQTT_* 키들 때문에 두 번 겪었던 장애.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()

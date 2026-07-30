@@ -98,8 +98,7 @@ void registerDevice() {
   JsonDocument doc;
   doc["device_id"] = DEVICE_ID;
   doc["type"] = "presence_cam";
-  doc["room"] = ROOM;
-  doc["label"] = ROOM " 생활 패턴 감지(카메라)";
+  doc["label"] = "생활 패턴 감지(카메라)";
 
   int status = postJson("/devices/register", doc);
   Serial.print("등록 응답 코드: ");
