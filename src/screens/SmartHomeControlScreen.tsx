@@ -132,6 +132,26 @@ function DeviceCard({
   );
 }
 
+// 조명(living-light-01) 전용 카드 - 자동/수동 구분이 없는 항상-수동 기기라 2열 그리드의 작은 칸
+// 대신 ActiveDevicesCard와 같은 크기(전체 폭)의 카드로 눈에 띄게 보여준다. 켜져 있으면 밝기(%)를,
+// 꺼져 있으면 OFF를 큼직하게 표시한다. 탭하면 기존과 동일하게 기기 설정(밝기 조절 포함) 창이 뜬다.
+function LightCard({ device, scale, onPress }: { device: Device; scale: number; onPress: () => void }) {
+  return (
+    <AnimatedPressable
+      style={[styles.lightCard, { paddingVertical: 24 * scale }]}
+      onPress={onPress}
+      activeOpacity={0.8}
+      accessibilityLabel={`${device.name} 설정`}
+    >
+      {device.on && <View style={styles.activeDot} />}
+      <Text style={[styles.activeLabel, { fontSize: 20 * scale }]}>{device.name}</Text>
+      <Text style={[styles.activeCount, { fontSize: 40 * scale, marginTop: 10 * scale }]}>
+        {device.on ? `${device.brightness}%` : 'OFF'}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
 // 연결된 스마트 플러그(회색 박스) 대신 마지막 칸에 뜨는 원형 "+" 버튼. 주변 기기 감지 목록을 연다.
 function AddDeviceButton({ scale, cellSize, onPress }: { scale: number; cellSize: number; onPress: () => void }) {
   const size = 56 * scale;
@@ -400,20 +420,21 @@ function DeviceSettingsModal({
               <View style={styles.deviceRow}>
                 <Text style={styles.deviceName}>전원</Text>
                 <View style={styles.deviceControls}>
-                  <AnimatedPressable
-                    style={[styles.modeToggle, device?.mode === 'manual' && styles.modeToggleManual]}
-                    onPress={() => roomId && device && onToggleMode(roomId, device.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[styles.modeToggleText, device?.mode === 'manual' && styles.modeToggleTextManual]}
+                  {/* 조명(living-light-01)은 자동/수동 개념 자체가 없다 - 항상 수동으로 직접 켜고 끈다. */}
+                  {device?.id !== 'living-light-01' && (
+                    <AnimatedPressable
+                      style={[styles.modeToggle, device?.mode === 'manual' && styles.modeToggleManual]}
+                      onPress={() => roomId && device && onToggleMode(roomId, device.id)}
+                      activeOpacity={0.7}
                     >
-                      {device?.mode === 'auto' ? '자동' : '수동'}
-                    </Text>
-                  </AnimatedPressable>
+                      <Text
+                        style={[styles.modeToggleText, device?.mode === 'manual' && styles.modeToggleTextManual]}
+                      >
+                        {device?.mode === 'auto' ? '자동' : '수동'}
+                      </Text>
+                    </AnimatedPressable>
+                  )}
 
-                  {/* 조명(living-light-01)은 자동/수동 전환 없이 항상 바로 켜고 끌 수 있다 -
-                      다른 기기는 기존대로 수동 모드일 때만 직접 제어된다. */}
                   {device?.mode === 'manual' || device?.id === 'living-light-01' ? (
                     <AnimatedPressable
                       style={[styles.statusBadge, device?.on ? styles.statusOn : styles.statusOff]}
@@ -500,15 +521,23 @@ export default function SmartHomeControlScreen() {
 
   const activeCount = rooms.reduce((sum, r) => sum + r.devices.filter((d) => d.on).length, 0);
   const settingsDevice = room?.devices.find((d) => d.id === settingsDeviceId) ?? null;
+  const lightDevice = room?.devices.find((d) => d.id === 'living-light-01') ?? null;
+  const gridDevices = room?.devices.filter((d) => d.id !== 'living-light-01') ?? [];
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={[styles.content, { paddingTop: 20 * scale }]}>
         <ActiveDevicesCard scale={scale} count={activeCount} />
         <View style={{ height: 16 * scale }} />
+        {lightDevice && (
+          <>
+            <LightCard scale={scale} device={lightDevice} onPress={() => setSettingsDeviceId(lightDevice.id)} />
+            <View style={{ height: 16 * scale }} />
+          </>
+        )}
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 * scale }}>
           <View style={[styles.grid, { rowGap: GRID_GAP }]}>
-            {room?.devices.map((device) => (
+            {gridDevices.map((device) => (
               <DeviceCard
                 key={device.id}
                 device={device}
@@ -565,6 +594,14 @@ const styles = StyleSheet.create({
   activeCount: {
     fontFamily: fonts.jalnan,
     color: colors.text,
+  },
+
+  // ActiveDevicesCard와 동일한 크기(전체 폭)의 조명 전용 카드.
+  lightCard: {
+    width: '100%',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 20,
   },
 
   grid: {

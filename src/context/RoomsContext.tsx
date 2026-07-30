@@ -91,7 +91,8 @@ function applyExtras(apiRooms: api.RoomWithDevices[], extras: ExtrasStore): Room
           id: d.id,
           name: d.label ?? d.id,
           on: d.state === 'on',
-          mode: deviceExtra?.mode ?? 'auto',
+          // 조명(living-light-01)은 자동/수동 개념 없이 항상 수동 취급 - toggleDeviceMode도 이 id는 무시한다.
+          mode: d.id === 'living-light-01' ? 'manual' : deviceExtra?.mode ?? 'auto',
           onSince: deviceExtra?.onSince ?? null,
           type: d.type,
           brightness: deviceExtra?.brightness ?? 100,
@@ -229,6 +230,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   // 사용자가 아래 toggleDevicePower로 직접 정한다. (모드는 백엔드에 없는 프런트 전용 값)
   // id로 찾는다 - 이유는 deleteDevice와 동일(이름 중복 시 오작동 방지).
   const toggleDeviceMode = (roomId: string, deviceId: string) => {
+    if (deviceId === 'living-light-01') return; // 조명은 항상 수동 - 전환 UI 자체가 없지만 방어적으로 무시
     setRooms((prev) =>
       prev.map((r) =>
         r.id !== roomId
