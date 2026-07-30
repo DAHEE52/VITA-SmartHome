@@ -5,6 +5,9 @@
 // 이 화면엔 방을 추가/삭제하는 UI가 없고, 그리드는 방이 아니라 그 방에 연결된 기기(스마트 플러그)를
 // 카드로 보여준다. "+" 버튼을 누르면 주변에 감지되는 기기 목록이 뜨고, 등록하면 카드로 나타난다.
 // 카드를 누르면 이름을 직접 지정할 수 있고, 전력 측정기(power_monitor)면 실시간 W도 보인다.
+// room.devices에는 하드웨어 테스트용으로 등록된 릴레이 제어보드·환경/재실 센서도 함께 들어있을 수
+// 있지만, 사용자가 직접 켜고 끄는 대상이 아니므로 isControllableSmartDevice로 걸러서 조명·Tapo
+// 스마트 콘센트만 카드로 보여준다(utils/devices.ts 참고).
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -24,6 +27,7 @@ import AnimatedPressable from '../components/AnimatedPressable';
 import { PlusIcon } from '../components/icons';
 import { useRooms, Device } from '../context/RoomsContext';
 import { useAppWindowDimensions } from '../hooks/useAppWindowDimensions';
+import { isControllableSmartDevice } from '../utils/devices';
 import * as api from '../api/client';
 
 // 화면이 작은 기기에서는 카드 padding/폰트 크기를 함께 줄이는 scale 값을 쓴다.
@@ -497,7 +501,11 @@ export default function SmartHomeControlScreen() {
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [settingsDeviceId, setSettingsDeviceId] = useState<string | null>(null);
 
-  const activeCount = rooms.reduce((sum, r) => sum + r.devices.filter((d) => d.on).length, 0);
+  const activeCount = rooms.reduce(
+    (sum, r) => sum + r.devices.filter((d) => d.on && isControllableSmartDevice(d.id)).length,
+    0
+  );
+  const visibleDevices = room?.devices.filter((d) => isControllableSmartDevice(d.id)) ?? [];
   const settingsDevice = room?.devices.find((d) => d.id === settingsDeviceId) ?? null;
 
   return (
@@ -507,7 +515,7 @@ export default function SmartHomeControlScreen() {
         <View style={{ height: 16 * scale }} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 * scale }}>
           <View style={[styles.grid, { rowGap: GRID_GAP }]}>
-            {room?.devices.map((device) => (
+            {visibleDevices.map((device) => (
               <DeviceCard
                 key={device.id}
                 device={device}

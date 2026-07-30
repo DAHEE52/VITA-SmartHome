@@ -16,6 +16,7 @@ import { RoomsProvider } from './src/context/RoomsContext';
 import { EnergyHistoryProvider } from './src/context/EnergyHistoryContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
 import { FireSafetyProvider } from './src/context/FireSafetyContext';
+import { EmergencyContactsProvider } from './src/context/EmergencyContactsContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 import { CalendarProvider } from './src/context/CalendarContext';
 import { PresenceProvider } from './src/context/PresenceContext';
@@ -67,11 +68,16 @@ export default function App() {
                           {/* AutomationProvider는 SleepProvider 아래(자손)에 있어야 한다 - 자동화 규칙의
                               "취침 모드" 트리거가 useSleep()으로 SleepContext의 상태를 읽기 때문. */}
                           <AutomationProvider>
-                            <FireSafetyProvider>
-                              <SettingsProvider>
-                                <RootNavigator />
-                              </SettingsProvider>
-                            </FireSafetyProvider>
+                            {/* EmergencyContactsProvider는 FireSafetyProvider보다 위(조상)에 있어야 한다 -
+                                화재 확인 시간 초과 시 자동으로 비상 연락망에 알림을 보내려면
+                                FireSafetyContext가 useEmergencyContacts()로 이 목록을 읽어야 하기 때문. */}
+                            <EmergencyContactsProvider>
+                              <FireSafetyProvider>
+                                <SettingsProvider>
+                                  <RootNavigator />
+                                </SettingsProvider>
+                              </FireSafetyProvider>
+                            </EmergencyContactsProvider>
                           </AutomationProvider>
                         </SleepProvider>
                       </SensorProvider>

@@ -52,7 +52,7 @@ export type RoomSensorReading = {
 };
 
 // 이 온도(°C) 이상이면 그 자체로 "위험" - 실제 화재 상황의 급격한 온도 상승을 가정한 참고값(데모용).
-export const SENSOR_DANGER_TEMP_C = 50;
+export const SENSOR_DANGER_TEMP_C = 60;
 // 이 온도(°C) 이상이면 "주의" - 화재까지는 아니어도 평소보다 확실히 뜨거운 상태.
 export const SENSOR_CAUTION_TEMP_C = 38;
 // 습도가 이 값(%) 이하로 급격히 낮으면 "주의" - 화재 초기에 흔히 나타나는 건조화 신호로 참고.
@@ -77,4 +77,22 @@ export const RISE_DANGER_DELTA_C = 5; // 5분 내 5℃ 이상 상승하면 위�
 
 export function temperatureRiseRisk(riseC: number): SensorRiskLevel {
   return riseC >= RISE_DANGER_DELTA_C ? 'danger' : 'safe';
+}
+
+// "화재 위험 감지 및 비상 알림" 기능의 PIR 무움직임 조건. 온도 이상만으로 화재를 의심하면
+// 재실 중 요리처럼 정상적으로 뜨거워지는 상황까지 오탐으로 잡을 수 있으므로, 일정 시간 동안
+// 움직임이 없었을 때(=아무도 대응하고 있지 않을 가능성이 클 때)만 화재 의심으로 올린다.
+// 데모에서 바로 확인할 수 있도록 실제 권장치보다 훨씬 짧게 잡았다.
+export const FIRE_NO_MOTION_MINUTES = 2;
+
+// 온도 기반 위험(절대 임계치 또는 급상승)과 PIR 무움직임을 함께 봐서 "화재 의심" 여부를 최종
+// 판단한다. 오탐 방지 로직: 절대 온도만으로 판단하지 않고 상승 속도까지 함께 보며, 최근에 사람이
+// 움직였으면(minutesSinceMotion이 작으면) 온도가 위험 범위여도 화재 의심으로 올리지 않는다.
+export function isFireSuspected(
+  reading: RoomSensorReading | undefined,
+  riseC: number,
+  minutesSinceMotion: number
+): boolean {
+  const tempDanger = sensorRiskLevel(reading) === 'danger' || temperatureRiseRisk(riseC) === 'danger';
+  return tempDanger && minutesSinceMotion >= FIRE_NO_MOTION_MINUTES;
 }

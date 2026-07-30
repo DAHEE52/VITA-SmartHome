@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView } from 'react-native';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
 
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
@@ -15,7 +14,6 @@ const SCREEN_PADDING = 20;
 const FONT_SIZE_OPTIONS: FontSizeOption[] = ['small', 'medium', 'large'];
 
 export default function SettingsScreen() {
-  const navigation = useNavigation<any>();
   const { address, setAddress, guidebookFontSize, setGuidebookFontSize } = useSettings();
   const [addressDraft, setAddressDraft] = useState(address);
 
@@ -81,36 +79,6 @@ export default function SettingsScreen() {
               미리보기: 화재가 나면 신속하게 대피하세요.
             </Text>
           </View>
-        </Card>
-
-        <Card style={styles.card}>
-          <Text style={styles.cardTitle}>🔌 기기 관리</Text>
-          <Text style={styles.cardSubtitle}>
-            조명·에어컨·TV·컴퓨터·가습기 등 기기 추가/이름 변경/방 배정은 스마트홈 제어 화면에서 할 수
-            있어요.
-          </Text>
-          <AnimatedPressable
-            style={styles.linkButton}
-            onPress={() => navigation.navigate('SmartHomeControl')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.linkButtonText}>스마트홈 제어로 이동</Text>
-          </AnimatedPressable>
-        </Card>
-
-        <Card style={styles.card}>
-          <Text style={styles.cardTitle}>🛏 취침 모드 설정</Text>
-          <Text style={styles.cardSubtitle}>
-            취침 감지 조건과 취침 모드로 전환될 기기는 자동화 규칙 화면의 "🛏 취침 모드" 버튼에서
-            설정해요.
-          </Text>
-          <AnimatedPressable
-            style={styles.linkButton}
-            onPress={() => navigation.navigate('Automation')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.linkButtonText}>자동화 규칙으로 이동</Text>
-          </AnimatedPressable>
         </Card>
 
         <Card style={styles.card}>
@@ -253,18 +221,6 @@ const styles = StyleSheet.create({
     color: colors.textGray2,
   },
 
-  linkButton: {
-    marginTop: 4,
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: colors.orange,
-  },
-  linkButtonText: {
-    fontFamily: fonts.jalnan,
-    fontSize: 14,
-    color: colors.white,
-  },
   privacyLine: {
     fontSize: 13,
     color: colors.textGray2,

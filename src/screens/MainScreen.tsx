@@ -14,6 +14,7 @@ import {
   Pressable,
   TextInput,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -47,6 +48,8 @@ import { useEnergyHistory } from '../context/EnergyHistoryContext';
 import { useSleep } from '../context/SleepContext';
 import { useRooms } from '../context/RoomsContext';
 import { usePresence } from '../context/PresenceContext';
+import { useFireSafety } from '../context/FireSafetyContext';
+import { useEmergencyContacts } from '../context/EmergencyContactsContext';
 import { monthAchievementRate, daysInMonthOf } from '../utils/goalProgress';
 import MenuModal from '../components/MenuModal';
 import NotificationsModal from '../components/NotificationsModal';
@@ -383,6 +386,81 @@ function SleepConfirmModal() {
   );
 }
 
+// "🚨 화재가 의심됩니다" 확인 모달 - FireSafetyContext.emergency가 있을 때 자동으로 뜬다.
+// SleepConfirmModal과 같은 이유로 MainScreen에 마운트해서, 어느 화면을 보고 있었든 감지 즉시
+// 눈에 띄게 한다. 두 단계로 나뉜다:
+// - confirming: 남은 시간을 카운트다운하며 "안전해요"(오탐 해제) 또는 "119 신고"를 고를 수 있다.
+//   시간 안에 응답이 없으면 FireSafetyContext가 알아서 escalated로 넘긴다(이 모달은 그 결과만 반영).
+// - escalated: 이미 비상 연락망에 알림을 보낸 뒤 - 등록된 연락처를 원터치로 바로 전화 걸 수 있게
+//   보여주고, "확인했어요"를 누르면 닫힌다.
+function FireEmergencyModal() {
+  const { emergency, confirmSafe, dismissEmergency } = useFireSafety();
+  const { contacts } = useEmergencyContacts();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!emergency || emergency.phase !== 'confirming') return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [emergency?.phase]);
+
+  if (!emergency) return null;
+
+  const callEmergency = () => Linking.openURL('tel:119');
+  const callContact = (phone: string) => {
+    const digits = phone.replace(/[^0-9+]/g, '');
+    if (digits) Linking.openURL(`tel:${digits}`);
+  };
+
+  const remainingSec = Math.max(0, Math.ceil((emergency.confirmDeadlineAt - now) / 1000));
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>🚨 화재가 의심됩니다</Text>
+          <Text style={styles.modalSubtitle}>{emergency.reason}</Text>
+
+          {emergency.phase === 'confirming' ? (
+            <Text style={styles.fireCountdownText}>
+              {remainingSec}초 후 자동으로 비상 연락망에 알림이 전송돼요
+            </Text>
+          ) : (
+            <>
+              <Text style={styles.fireCountdownText}>비상 연락망에 알림을 보냈어요</Text>
+              {contacts.map((c) => (
+                <AnimatedPressable
+                  key={c.id}
+                  style={styles.fireContactRow}
+                  onPress={() => callContact(c.phone)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.fireContactName}>{c.name}</Text>
+                  <Text style={styles.fireContactCallText}>📞 전화</Text>
+                </AnimatedPressable>
+              ))}
+            </>
+          )}
+
+          <AnimatedPressable style={styles.fireCallButton} onPress={callEmergency} activeOpacity={0.7}>
+            <Text style={styles.fireCallButtonText}>📞 119 신고하기</Text>
+          </AnimatedPressable>
+
+          {emergency.phase === 'confirming' ? (
+            <AnimatedPressable style={styles.renameSaveButtonWide} onPress={confirmSafe} activeOpacity={0.7}>
+              <Text style={styles.renameSaveText}>✅ 안전해요</Text>
+            </AnimatedPressable>
+          ) : (
+            <AnimatedPressable style={styles.modalCloseButton} onPress={dismissEmergency} activeOpacity={0.7}>
+              <Text style={styles.modalCloseText}>확인했어요</Text>
+            </AnimatedPressable>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const MENU_GAP = 4;
 
 // 스마트홈 제어 / 캘린더 / 에너지 사용량 / 에너지 나무로 이동하는 4개 바로가기 카드
@@ -460,6 +538,7 @@ export default function MainScreen() {
         <BottomNav variant="main" />
       </View>
       <SleepConfirmModal />
+      <FireEmergencyModal />
     </SafeAreaView>
   );
 }
@@ -729,6 +808,45 @@ const styles = StyleSheet.create({
     backgroundColor: colors.orange,
   },
   renameSaveText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 15,
+    color: colors.white,
+  },
+
+  fireCountdownText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 14,
+    color: colors.red,
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  fireContactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  fireContactName: {
+    fontFamily: fonts.jalnan,
+    fontSize: 14,
+    color: colors.text,
+  },
+  fireContactCallText: {
+    fontFamily: fonts.jalnan,
+    fontSize: 13,
+    color: colors.orange,
+  },
+  fireCallButton: {
+    alignItems: 'center',
+    marginTop: 14,
+    marginBottom: 10,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.red,
+  },
+  fireCallButtonText: {
     fontFamily: fonts.jalnan,
     fontSize: 15,
     color: colors.white,

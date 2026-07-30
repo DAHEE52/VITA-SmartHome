@@ -25,6 +25,7 @@ import BottomNav from '../components/BottomNav';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { PlusIcon, CloseIcon } from '../components/icons';
 import { useSettings, FONT_SIZE_SCALE } from '../context/SettingsContext';
+import { useEmergencyContacts } from '../context/EmergencyContactsContext';
 
 // 설정 화면의 "글자 크기 조절"은 이 화면의 글자 크기에만 영향을 준다. 매 컴포넌트가 현재 배율을
 // 읽어 자기 몫의 스타일을 새로 만들어 쓴다(모듈 최상단 고정 StyleSheet 대신 함수로 생성).
@@ -32,8 +33,6 @@ function useGuidebookStyles() {
   const { guidebookFontSize } = useSettings();
   return createStyles(FONT_SIZE_SCALE[guidebookFontSize]);
 }
-
-type Contact = { id: string; name: string; phone: string };
 
 // "tel:" 스킴으로 전화 앱을 연다. 숫자/+ 외 문자(하이픈, 공백 등)는 제거해서 넘긴다.
 function callNumber(phone: string) {
@@ -241,15 +240,11 @@ export default function GuidebookScreen() {
   const toggleSupplyCheck = (i: number) =>
     setSupplyChecks((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
 
-  // 가족 비상 연락처는 처음엔 등록된 게 없는 상태로 시작 - 사용자가 직접 추가해야 한다.
-  const [familyContacts, setFamilyContacts] = useState<Contact[]>([]);
+  // 가족 비상 연락처 - EmergencyContactsContext에서 관리한다(앱 전체 공유 + 기기에 저장돼 화면을
+  // 나가거나 앱을 재시작해도 유지된다). 화재 감지 시간 초과로 자동 알림을 보낼 때도 이 목록을 그대로 쓴다.
+  const { contacts: familyContacts, addContact: addFamilyContact, removeContact: removeFamilyContact } =
+    useEmergencyContacts();
   const [addContactVisible, setAddContactVisible] = useState(false);
-  const addFamilyContact = (name: string, phone: string) => {
-    setFamilyContacts((prev) => [...prev, { id: `contact-${Date.now()}`, name, phone }]);
-  };
-  const removeFamilyContact = (id: string) => {
-    setFamilyContacts((prev) => prev.filter((c) => c.id !== id));
-  };
 
   // 경비실/관리사무소 번호도 마찬가지로 빈 값에서 시작해서 사용자가 직접 입력한다.
   const [guardPhone, setGuardPhone] = useState('');
