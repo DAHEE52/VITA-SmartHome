@@ -3,6 +3,8 @@
 FastAPI 백엔드(`VITA/backend/`)와 HTTP로 통신하는 ESP32 펌웨어. 각 폴더가 독립된 Arduino 스케치다.
 
 실제 부품 배선/납땜 방법은 [WIRING_GUIDE.md](WIRING_GUIDE.md) 참고 (AC 전원을 다루는 안전 수칙 포함).
+앱에서 조명 등 기기를 켜고 끄는 기능을 처음부터 끝까지(코드 흐름 + 배선 + 앱 연결) 연결하는
+절차는 [DEVICE_CONTROL_GUIDE.md](DEVICE_CONTROL_GUIDE.md) 참고.
 
 | 폴더 | 하드웨어 | 역할 |
 |---|---|---|

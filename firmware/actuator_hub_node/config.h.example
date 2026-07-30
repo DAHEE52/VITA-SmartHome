@@ -20,6 +20,11 @@
 #define RELAY3_DEVICE_ID "living-relay-03"
 #define RELAY4_DEVICE_ID "living-relay-04"
 
-// 저가 옵토릴레이 보드는 보통 active-LOW(LOW를 줘야 릴레이가 동작)다.
-// 실제 보드로 극성을 확인한 뒤 필요하면 HIGH로 바꿀 것 - active-high로 가정하지 말 것.
-#define RELAY_ACTIVE_LEVEL LOW
+// 채널별 active level. GPIO에 저항+LED를 직결한 채널은 HIGH를 줘야 켜지므로(active-HIGH)
+// HIGH로 두고, 옵토릴레이 모듈을 쓰는 채널은 대부분 LOW를 줘야 켜지므로(active-LOW) LOW로
+// 둔다. 기본값은 "채널1 = 조명 LED 직결", "채널2~4 = 옵토릴레이 모듈"을 가정한 것 -
+// 실제 배선과 다르면 반드시 실측(딸깍 소리/LED 점등) 후 맞춰 바꿀 것.
+#define RELAY1_ACTIVE_LEVEL HIGH  // 조명 LED 직결
+#define RELAY2_ACTIVE_LEVEL LOW
+#define RELAY3_ACTIVE_LEVEL LOW
+#define RELAY4_ACTIVE_LEVEL LOW
