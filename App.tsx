@@ -62,17 +62,19 @@ export default function App() {
                 <EnergyHistoryProvider>
                   <CalendarProvider>
                     <PresenceProvider>
-                      <AutomationProvider>
-                        <SensorProvider>
-                          <SleepProvider>
+                      <SensorProvider>
+                        <SleepProvider>
+                          {/* AutomationProvider는 SleepProvider 아래(자손)에 있어야 한다 - 자동화 규칙의
+                              "취침 모드" 트리거가 useSleep()으로 SleepContext의 상태를 읽기 때문. */}
+                          <AutomationProvider>
                             <FireSafetyProvider>
                               <SettingsProvider>
                                 <RootNavigator />
                               </SettingsProvider>
                             </FireSafetyProvider>
-                          </SleepProvider>
-                        </SensorProvider>
-                      </AutomationProvider>
+                          </AutomationProvider>
+                        </SleepProvider>
+                      </SensorProvider>
                     </PresenceProvider>
                   </CalendarProvider>
                 </EnergyHistoryProvider>

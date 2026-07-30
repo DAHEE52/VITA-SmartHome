@@ -12,9 +12,10 @@
 import React, { createContext, useContext, useState, useRef, useEffect, ReactNode } from 'react';
 import * as api from '../api/client';
 import { useCalendar, ScheduleItem } from './CalendarContext';
-import { useRooms } from './RoomsContext';
+import { useRooms, Room } from './RoomsContext';
 import { useNotifications } from './NotificationsContext';
 import { usePresence } from './PresenceContext';
+import { useSleep } from './SleepContext';
 import { rollbackOnFailure } from '../utils/optimisticUpdate';
 import { getDeviceType } from '../utils/energy';
 
@@ -27,7 +28,8 @@ export type AutomationTrigger =
   | { kind: 'outing' } // 캘린더 SPECIAL 중 kind='outing'(외출 예정) 전체
   | { kind: 'overnight' } // 캘린더 SPECIAL 중 kind='overnight'(외박 일정) 전체
   | { kind: 'routine'; routineId: string } // 특정 DAILY(요일별 루틴) 항목 하나를 참조
-  | { kind: 'presence' }; // 재실/외출 여부(PresenceContext, 카메라+PIR 융합 결과)가 바뀔 때
+  | { kind: 'presence' } // 재실/외출 여부(PresenceContext, 카메라+PIR 융합 결과)가 바뀔 때
+  | { kind: 'sleep' }; // 취침 모드가 실제로 시작될 때(SleepContext state가 'active'로 바뀌는 순간)
 
 export type AutomationAction =
   | { kind: 'light_on' } // 방의 조명류(getDeviceType==='조명') 기기를 전부 켠다
@@ -120,6 +122,7 @@ export function describeTrigger(trigger: AutomationTrigger, dailyItems: Schedule
   if (trigger.kind === 'outing') return '외출 예정';
   if (trigger.kind === 'overnight') return '외박 일정';
   if (trigger.kind === 'presence') return '재실/외출';
+  if (trigger.kind === 'sleep') return '취침 모드';
   const routine = dailyItems.find((it) => it.id === trigger.routineId);
   if (!routine) return '삭제된 루틴';
   return routine.label ? `루틴 "${routine.label}"` : '요일별 루틴';
@@ -152,6 +155,7 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   const { rooms, setDevicePower, setRoomTargetTemp } = useRooms();
   const { pushNotification } = useNotifications();
   const { isHome } = usePresence();
+  const { state: sleepState } = useSleep();
 
   const [rules, setRules] = useState<AutomationRule[]>([]);
 
@@ -172,6 +176,8 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   pushNotificationRef.current = pushNotification;
   const isHomeRef = useRef(isHome);
   isHomeRef.current = isHome;
+  const sleepStateRef = useRef(sleepState);
+  sleepStateRef.current = sleepState;
 
   // 이미 실행한 (규칙, 날짜) 조합을 기록해 같은 발동이 하루 안에서 여러 번(매 tick마다) 반복
   // 실행되는 걸 막는다. 렌더와 무관한 값이라 state가 아니라 ref로 둔다.
@@ -179,6 +185,9 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   // 재실/외출 규칙은 "시각"이 아니라 "상태 전환"에 반응해야 하므로, 규칙별로 마지막에 반영한
   // isHome 값을 따로 기록해 실제로 상태가 바뀌었을 때만(그리고 처음 만들었을 때 한 번) 실행한다.
   const presenceAppliedRef = useRef<Map<string, boolean>>(new Map());
+  // 취침 모드 트리거도 "시각"이 아니라 "state가 active로 바뀌는 순간"에 반응한다 - 매 tick(20초)마다
+  // 계속 재실행되지 않도록, 직전 tick의 취침 상태를 기억해 "막 active가 된 순간"만 골라낸다.
+  const wasSleepActiveRef = useRef(false);
 
   // 실시간 실내 온도(env_sensor 평균) - 아래 온도 유지 루프가 목표 온도와 비교하는 데 쓴다.
   const [currentTemp, setCurrentTemp] = useState<number | null>(null);
@@ -203,14 +212,50 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // light_on/light_off/power_cut/set_temp 액션 실행 - 시각 기반 규칙과 취침 모드 트리거 규칙이
+  // 공통으로 쓴다. presence_temp는 재실/외출 트리거 전용이라 여기서 다루지 않는다.
+  const runRoomAction = (room: Room, action: AutomationAction, triggerText: string) => {
+    if (action.kind === 'light_on' || action.kind === 'light_off') {
+      const on = action.kind === 'light_on';
+      const lights = room.devices.filter((d) => getDeviceType(d.name) === '조명');
+      lights.forEach((d) => setDevicePowerRef.current(room.id, d.name, on));
+      pushNotificationRef.current(
+        '🔁 자동화 실행',
+        `${triggerText}에 따라 ${room.label}의 조명을 ${on ? '켰어요' : '껐어요'}.`
+      );
+    } else if (action.kind === 'power_cut') {
+      room.devices.forEach((d) => setDevicePowerRef.current(room.id, d.name, false));
+      pushNotificationRef.current('🔁 자동화 실행', `${triggerText}에 따라 ${room.label}의 전원을 모두 차단했어요.`);
+    } else if (action.kind === 'set_temp') {
+      setRoomTargetTempRef.current(room.id, action.targetTemp);
+      pushNotificationRef.current(
+        '🔁 자동화 실행',
+        `${triggerText}에 따라 ${room.label}의 목표 온도를 ${action.targetTemp}°C로 설정했어요.`
+      );
+    }
+  };
+
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
       const nowHHMM = currentHHMM(now);
       const today = dateKey(now);
 
+      // 취침 모드는 "막 active가 된 순간"에만 반응한다 - 규칙 루프 시작 전에 한 번만 계산해서 재사용.
+      const isSleepActive = sleepStateRef.current === 'active';
+      const justFellAsleep = isSleepActive && !wasSleepActiveRef.current;
+      wasSleepActiveRef.current = isSleepActive;
+
       for (const rule of rulesRef.current) {
         if (!rule.enabled) continue;
+
+        if (rule.trigger.kind === 'sleep') {
+          if (!justFellAsleep) continue;
+          const room = roomsRef.current.find((r) => r.id === rule.roomId);
+          if (!room) continue;
+          runRoomAction(room, rule.action, '취침 모드');
+          continue;
+        }
 
         if (rule.trigger.kind === 'presence' && rule.action.kind === 'presence_temp') {
           if (presenceAppliedRef.current.get(rule.id) === isHomeRef.current) continue; // 상태 그대로, 다시 실행할 필요 없음
@@ -240,25 +285,7 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
         if (!room) continue;
 
         const triggerText = describeTrigger(rule.trigger, dailyItemsRef.current);
-
-        if (rule.action.kind === 'light_on' || rule.action.kind === 'light_off') {
-          const on = rule.action.kind === 'light_on';
-          const lights = room.devices.filter((d) => getDeviceType(d.name) === '조명');
-          lights.forEach((d) => setDevicePowerRef.current(room.id, d.name, on));
-          pushNotificationRef.current(
-            '🔁 자동화 실행',
-            `${triggerText}에 따라 ${room.label}의 조명을 ${on ? '켰어요' : '껐어요'}.`
-          );
-        } else if (rule.action.kind === 'power_cut') {
-          room.devices.forEach((d) => setDevicePowerRef.current(room.id, d.name, false));
-          pushNotificationRef.current('🔁 자동화 실행', `${triggerText}에 따라 ${room.label}의 전원을 모두 차단했어요.`);
-        } else if (rule.action.kind === 'set_temp') {
-          setRoomTargetTempRef.current(room.id, rule.action.targetTemp);
-          pushNotificationRef.current(
-            '🔁 자동화 실행',
-            `${triggerText}에 따라 ${room.label}의 목표 온도를 ${rule.action.targetTemp}°C로 설정했어요.`
-          );
-        }
+        runRoomAction(room, rule.action, triggerText);
         // action.kind === 'presence_temp'는 trigger.kind === 'presence' 규칙에서만 쓰이고,
         // 그 경우는 위에서 이미 처리하고 continue하므로 여기까지 오지 않는다.
       }

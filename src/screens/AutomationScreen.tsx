@@ -55,13 +55,14 @@ function isValidHHMM(time: string): boolean {
   return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
 }
 
-type TriggerKind = 'outing' | 'overnight' | 'routine' | 'presence';
+type TriggerKind = 'outing' | 'overnight' | 'routine' | 'presence' | 'sleep';
 
 const TRIGGER_OPTIONS: { value: TriggerKind; label: string }[] = [
   { value: 'outing', label: '외출 예정' },
   { value: 'overnight', label: '외박 일정' },
   { value: 'routine', label: '요일별 루틴' },
   { value: 'presence', label: '재실/외출' },
+  { value: 'sleep', label: '취침 모드' },
 ];
 
 const ACTION_OPTIONS: { value: 'light_on' | 'light_off' | 'power_cut' | 'set_temp'; label: string }[] = [
@@ -108,7 +109,11 @@ function RuleCard({
           />
         </View>
         <Text style={styles.ruleOffset}>
-          {trigger.kind === 'presence' ? '재실 상태가 바뀔 때마다 자동 조절' : describeExecuteTime(rule.executeTime)}
+          {trigger.kind === 'presence'
+            ? '재실 상태가 바뀔 때마다 자동 조절'
+            : trigger.kind === 'sleep'
+            ? '취침 모드가 시작될 때 실행'
+            : describeExecuteTime(rule.executeTime)}
         </Text>
         <Text style={styles.ruleAction} numberOfLines={1}>
           {describeAction(rule.action, roomLabel)}
@@ -183,13 +188,15 @@ function RuleEditModal({
   }, [visible, initial]);
 
   const isPresence = triggerKind === 'presence';
+  // 재실/외출과 취침 모드는 둘 다 "시각"이 아니라 "상태가 바뀌는 순간"에 반응하는 트리거라 시각 입력이 필요 없다.
+  const isTimeless = isPresence || triggerKind === 'sleep';
 
   const canSave =
     !!roomId &&
     (triggerKind !== 'routine' || !!routineId) &&
     (isPresence
       ? homeTempText.trim() !== '' && awayTempText.trim() !== ''
-      : isValidHHMM(executeTimeText) && (actionKind !== 'set_temp' || tempText.trim() !== ''));
+      : (isTimeless || isValidHHMM(executeTimeText)) && (actionKind !== 'set_temp' || tempText.trim() !== ''));
 
   const handleSave = () => {
     if (canSave && roomId) {
@@ -206,7 +213,7 @@ function RuleEditModal({
         : actionKind === 'set_temp'
         ? { kind: 'set_temp', targetTemp: Math.max(0, Number(tempText) || 0) }
         : { kind: actionKind };
-      onSave({ trigger, executeTime: isPresence ? '00:00' : executeTimeText, roomId, action });
+      onSave({ trigger, executeTime: isTimeless ? '00:00' : executeTimeText, roomId, action });
     }
     onClose();
   };
@@ -257,7 +264,7 @@ function RuleEditModal({
                 </View>
               ))}
 
-            {!isPresence && (
+            {!isTimeless && (
               <>
                 <Text style={styles.fieldLabel}>언제 실행할까요</Text>
                 <TextInput
