@@ -4,8 +4,10 @@
 //      "+" 규칙 추가 버튼 / 하단 네비(홈)
 //
 // 캘린더에 등록한 "외출·외박 일정"(SPECIAL 일정 중 kind='outing'|'overnight' 전체, 자동화 트리거
-// 관점에서는 구분하지 않는다) 또는 "요일별 루틴"(DAILY 일정), 취침 모드를 트리거로 골라, 지정한
-// 콘센트를 켜고 끄는 규칙을 사용자가 직접 만든다.
+// 관점에서는 구분하지 않는다) 또는 "요일별 루틴"(DAILY 일정), 취침 모드, "재실·외출 감지"(카메라가
+// 실시간으로 감지한 재실 여부가 막 바뀐 순간 - PresenceContext)를 트리거로 골라, 지정한 콘센트를
+// 켜고 끄는 규칙을 사용자가 직접 만든다. 캘린더의 외출·외박 일정과 달리 presence 트리거는 미리
+// 등록해둔 날짜가 아니라 카메라가 실제로 감지하는 순간 바로 실행된다.
 // 실제 발동/실행은 화면과 무관하게 AutomationContext/SleepContext가 계속 감시한다.
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, TextInput, ScrollView, Switch } from 'react-native';
@@ -266,12 +268,18 @@ function SleepPresetModal({ visible, onClose }: { visible: boolean; onClose: () 
   );
 }
 
-type TriggerKind = 'away' | 'routine' | 'sleep';
+type TriggerKind = 'away' | 'routine' | 'sleep' | 'presence';
 
 const TRIGGER_OPTIONS: { value: TriggerKind; label: string }[] = [
   { value: 'away', label: '외출·외박 일정' },
   { value: 'routine', label: '요일별 루틴' },
   { value: 'sleep', label: '취침 모드' },
+  { value: 'presence', label: '재실·외출 감지' },
+];
+
+const PRESENCE_WHEN_OPTIONS: { value: 'home' | 'away'; label: string }[] = [
+  { value: 'home', label: '재실 감지 시(귀가)' },
+  { value: 'away', label: '외출 감지 시(부재)' },
 ];
 
 const POWER_OPTIONS: { value: boolean; label: string }[] = [
@@ -316,7 +324,11 @@ function RuleCard({
           />
         </View>
         <Text style={styles.ruleOffset}>
-          {trigger.kind === 'sleep' ? '취침 모드가 시작될 때 실행' : describeExecuteTime(rule.executeTime)}
+          {trigger.kind === 'sleep'
+            ? '취침 모드가 시작될 때 실행'
+            : trigger.kind === 'presence'
+            ? `${trigger.when === 'home' ? '재실' : '외출(부재)'}이 감지되면 즉시 실행`
+            : describeExecuteTime(rule.executeTime)}
         </Text>
         <Text style={styles.ruleAction} numberOfLines={1}>
           {describeAction(rule.action, room)}
@@ -353,6 +365,7 @@ function RuleEditModal({
 }) {
   const [triggerKind, setTriggerKind] = useState<TriggerKind>('away');
   const [routineId, setRoutineId] = useState<string | null>(null);
+  const [presenceWhen, setPresenceWhen] = useState<'home' | 'away'>('home');
   const [executeTimeText, setExecuteTimeText] = useState('07:00');
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [powerOn, setPowerOn] = useState(true);
@@ -367,6 +380,7 @@ function RuleEditModal({
     if (initial) {
       setTriggerKind(initial.trigger.kind);
       setRoutineId(initial.trigger.kind === 'routine' ? initial.trigger.routineId : null);
+      setPresenceWhen(initial.trigger.kind === 'presence' ? initial.trigger.when : 'home');
       setExecuteTimeText(initial.executeTime);
       setSelectedDeviceIds(initial.action.deviceIds);
       setPowerOn(initial.action.on);
@@ -374,6 +388,7 @@ function RuleEditModal({
     } else {
       setTriggerKind('away');
       setRoutineId(dailyItems[0]?.id ?? null);
+      setPresenceWhen('home');
       setExecuteTimeText('07:00');
       setSelectedDeviceIds([]);
       setPowerOn(true);
@@ -383,7 +398,9 @@ function RuleEditModal({
 
   // 취침 모드는 "시각"이 아니라 "잠들었다고 판단되는 순간"에 반응하는 트리거라 시각 입력이 필요 없고,
   // 액션도 "조명 끄기"로 고정이라 기기/전원 선택 UI 자체가 필요 없다(아래 isDeviceSelectable 참고).
-  const isTimeless = triggerKind === 'sleep';
+  // presence(재실·외출 감지)도 "카메라가 감지한 순간"에 바로 반응하므로 시각 입력이 필요 없다 -
+  // 다만 조작할 기기는 취침 모드처럼 고정이 아니라 사용자가 직접 고른다(isDeviceSelectable 그대로 true).
+  const isTimeless = triggerKind === 'sleep' || triggerKind === 'presence';
   const isDeviceSelectable = triggerKind !== 'sleep';
   // 조명이 선택되고 "켜기"일 때만 밝기가 의미 있다 - 콘센트는 on/off만 지원하고, 끌 때는 밝기가 무의미하다.
   const isBrightnessRelevant = isDeviceSelectable && selectedDeviceIds.includes(LIGHT_DEVICE_ID) && powerOn;
@@ -409,6 +426,8 @@ function RuleEditModal({
       const trigger: AutomationTrigger =
         triggerKind === 'routine'
           ? { kind: 'routine', routineId: routineId! }
+          : triggerKind === 'presence'
+          ? { kind: 'presence', when: presenceWhen }
           : { kind: triggerKind };
       // 취침 모드는 "조명 끄기"로 고정 - 사용자가 고른 기기/전원 상태를 쓰지 않는다.
       const action: AutomationAction = !isDeviceSelectable
@@ -446,6 +465,23 @@ function RuleEditModal({
                 </AnimatedPressable>
               ))}
             </View>
+
+            {triggerKind === 'presence' && (
+              <View style={styles.chipRow}>
+                {PRESENCE_WHEN_OPTIONS.map((opt) => (
+                  <AnimatedPressable
+                    key={opt.value}
+                    style={[styles.chip, presenceWhen === opt.value && styles.chipSelected]}
+                    onPress={() => setPresenceWhen(opt.value)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.chipText, presenceWhen === opt.value && styles.chipTextSelected]}>
+                      {opt.label}
+                    </Text>
+                  </AnimatedPressable>
+                ))}
+              </View>
+            )}
 
             {triggerKind === 'routine' &&
               (dailyItems.length === 0 ? (
@@ -620,8 +656,8 @@ export default function AutomationScreen() {
         {rules.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Text style={styles.emptyText}>
-              아직 등록된 자동화 규칙이 없어요.{'\n'}외출·외박 일정·요일별 루틴이나 취침 모드에 맞춰
-              지정한 콘센트를 자동으로 켜고 꺼 보세요.
+              아직 등록된 자동화 규칙이 없어요.{'\n'}외출·외박 일정·요일별 루틴·취침 모드나 카메라의
+              재실·외출 감지에 맞춰 지정한 콘센트를 자동으로 켜고 꺼 보세요.
             </Text>
           </Card>
         ) : (
