@@ -22,7 +22,18 @@ export type DeviceMode = 'auto' | 'manual';
 // 화재 예방 시스템(FireSafetyContext)이 "이 기기가 얼마나 오래 계속 켜져 있었는지" 판단하는 데 쓴다.
 // id: 백엔드 devices.id (예: ESP32가 등록한 값 또는 mock-register가 만든 값) - 서버 API 호출에 쓴다.
 // type: 'power_monitor'면 실제 전력 측정값이 있다는 뜻 - 방 설정 화면에서 실시간 W를 조회할지 판단하는 데 쓴다.
-export type Device = { id: string; name: string; on: boolean; mode: DeviceMode; onSince: number | null; type: api.DeviceType };
+// brightness: 밝기 조절이 되는 조명(예: living-light-01)의 현재 밝기(0~100, %) - 백엔드
+// devices.state는 on/off만 표현하므로, 실제 숫자 값은 mode/onSince처럼 로컬(extras)에만 둔다.
+// 밝기 미지원 기기는 그냥 100(켜짐 기준값)으로 두고 화면에서 안 쓰면 된다.
+export type Device = {
+  id: string;
+  name: string;
+  on: boolean;
+  mode: DeviceMode;
+  onSince: number | null;
+  type: api.DeviceType;
+  brightness: number;
+};
 export type Room = { id: string; label: string; devices: Device[] };
 
 // VITA는 원룸(하나의 방) 전용 서비스라 방을 여러 개 만들 필요가 없다 - 항상 방이 정확히 하나만
@@ -31,7 +42,10 @@ const DEFAULT_ROOM_LABEL = 'ROOM';
 // 백엔드에 없는 값(모드/onSince)만 담아두는 로컬 캐시. room id -> device id 로 중첩.
 const EXTRAS_STORAGE_KEY = 'vita.rooms.extras.v1';
 
-type ExtrasStore = Record<string, { devices: Record<string, { mode: DeviceMode; onSince: number | null }> }>;
+type ExtrasStore = Record<
+  string,
+  { devices: Record<string, { mode: DeviceMode; onSince: number | null; brightness: number }> }
+>;
 
 type RoomsContextValue = {
   rooms: Room[];
@@ -41,6 +55,7 @@ type RoomsContextValue = {
   deleteDevice: (roomId: string, deviceId: string) => void;
   toggleDeviceMode: (roomId: string, deviceId: string) => void;
   toggleDevicePower: (roomId: string, deviceId: string) => void;
+  setDeviceBrightness: (roomId: string, deviceId: string, brightness: number) => void;
   setDevicePower: (roomId: string, deviceName: string, on: boolean) => void;
   setDevicePowerById: (roomId: string, deviceId: string, on: boolean) => void;
   forceOffDevice: (roomId: string, deviceName: string) => void;
@@ -75,6 +90,7 @@ function applyExtras(apiRooms: api.RoomWithDevices[], extras: ExtrasStore): Room
           mode: deviceExtra?.mode ?? 'auto',
           onSince: deviceExtra?.onSince ?? null,
           type: d.type,
+          brightness: deviceExtra?.brightness ?? 100,
         };
       }),
     };
@@ -117,7 +133,9 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     const extras: ExtrasStore = {};
     for (const r of rooms) {
       extras[r.id] = {
-        devices: Object.fromEntries(r.devices.map((d) => [d.id, { mode: d.mode, onSince: d.onSince }])),
+        devices: Object.fromEntries(
+          r.devices.map((d) => [d.id, { mode: d.mode, onSince: d.onSince, brightness: d.brightness }])
+        ),
       };
     }
     AsyncStorage.setItem(EXTRAS_STORAGE_KEY, JSON.stringify(extras)).catch((err) =>
@@ -156,7 +174,15 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
                   ...r,
                   devices: [
                     ...r.devices,
-                    { id: updated.id, name, on: updated.state === 'on', mode: 'auto', onSince: null, type: updated.type },
+                    {
+                      id: updated.id,
+                      name,
+                      on: updated.state === 'on',
+                      mode: 'auto',
+                      onSince: null,
+                      type: updated.type,
+                      brightness: 100,
+                    },
                   ],
                 }
           )
@@ -235,6 +261,35 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     );
     rollbackOnFailure(api.controlDevice(device.id, nextOn ? 'on' : 'off'), prev, setRooms, '기기 전원 제어', () =>
       notifySaveFailed('기기 전원 제어')
+    );
+  };
+
+  // 밝기 조절이 되는 조명(예: living-light-01) 전용 - 0~100 값을 그대로 백엔드에 문자열로 보낸다.
+  // 0이면 꺼진 것으로, 그 외에는 켜진 것으로 on을 같이 갱신한다(backend/app/routers/rooms.py의
+  // control_device가 하는 낙관적 상태 변환과 동일한 규칙).
+  const setDeviceBrightness = (roomId: string, deviceId: string, brightness: number) => {
+    const device = roomsRef.current.find((r) => r.id === roomId)?.devices.find((d) => d.id === deviceId);
+    if (!device) return;
+    const clamped = Math.max(0, Math.min(100, Math.round(brightness)));
+    const nextOn = clamped > 0;
+    const prev = rooms;
+
+    setRooms((p) =>
+      p.map((r) =>
+        r.id !== roomId
+          ? r
+          : {
+              ...r,
+              devices: r.devices.map((d) =>
+                d.id === deviceId
+                  ? { ...d, brightness: clamped, on: nextOn, onSince: nextOn ? (d.onSince ?? Date.now()) : null }
+                  : d
+              ),
+            }
+      )
+    );
+    rollbackOnFailure(api.controlDevice(device.id, String(clamped)), prev, setRooms, '조명 밝기 조절', () =>
+      notifySaveFailed('조명 밝기 조절')
     );
   };
 
@@ -358,6 +413,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
         deleteDevice,
         toggleDeviceMode,
         toggleDevicePower,
+        setDeviceBrightness,
         setDevicePower,
         setDevicePowerById,
         forceOffDevice,

@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 DeviceType = Literal["env_sensor", "relay", "power_monitor", "presence_cam"]
 CommandName = Literal["on", "off"]
@@ -38,7 +38,18 @@ class CommandAck(BaseModel):
 
 
 class ControlRequest(BaseModel):
-    command: CommandName
+    # "on"/"off" 외에, 밝기 조절이 되는 조명(예: living-light-01)은 "0"~"100" 숫자 문자열도
+    # 허용한다 - device_commands.command는 원래 자유 텍스트라 스키마 변경 없이 그대로 재사용.
+    command: str
+
+    @field_validator("command")
+    @classmethod
+    def validate_command(cls, v: str) -> str:
+        if v in ("on", "off"):
+            return v
+        if v.isdigit() and 0 <= int(v) <= 100:
+            return v
+        raise ValueError('command must be "on", "off", or a brightness string "0"-"100"')
 
 
 class DeviceStatus(BaseModel):

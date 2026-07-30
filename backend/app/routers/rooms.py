@@ -318,7 +318,10 @@ def control_device(device_id: str, body: ControlRequest):
         {"device_id": device_id, "command": body.command, "created_at": now_iso}
     ).execute()
 
-    # 기기가 실제로 반영하기 전이지만, 앱 UI에는 낙관적으로 즉시 반영
-    supabase.table("devices").update({"state": body.command}).eq("id", device_id).execute()
+    # 기기가 실제로 반영하기 전이지만, 앱 UI에는 낙관적으로 즉시 반영.
+    # devices.state는 on/off 판정에만 쓰이므로(active_device_count 등), 밝기 숫자("0"~"100")가
+    # 오면 0은 off로, 그 외에는 on으로 변환해서 저장한다 - 실제 밝기 값 자체는 device_commands에만 남는다.
+    optimistic_state = "off" if body.command in ("off", "0") else "on"
+    supabase.table("devices").update({"state": optimistic_state}).eq("id", device_id).execute()
 
-    return {"ok": True, "state": body.command}
+    return {"ok": True, "state": optimistic_state}
