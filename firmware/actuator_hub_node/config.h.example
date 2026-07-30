@@ -1,0 +1,25 @@
+#pragma once
+
+// 이 파일을 config.h로 복사한 뒤 실제 값으로 채운다. config.h는 커밋하지 않는다.
+
+#define WIFI_SSID "your-wifi-ssid"
+#define WIFI_PASSWORD "your-wifi-password"
+
+// FastAPI 서버가 떠 있는 PC의 LAN IP:port. 실제 실행 PC/네트워크가 다르면 ipconfig로 확인해서 바꿀 것.
+#define API_BASE_URL "http://192.168.200.141:8000"
+
+// VITA/backend/.env 의 DEVICE_API_KEY와 반드시 동일해야 함 (이미 맞춰서 생성해둔 값)
+#define DEVICE_KEY "345e01dbf13a5ba7d12843403115746a7f18b270431bc565"
+
+#define ROOM "거실"
+
+// PIR(재실) 1개 + 릴레이 4개 device_id
+#define PRESENCE_DEVICE_ID "living-presence-01"
+#define RELAY1_DEVICE_ID "living-relay-01"
+#define RELAY2_DEVICE_ID "living-relay-02"
+#define RELAY3_DEVICE_ID "living-relay-03"
+#define RELAY4_DEVICE_ID "living-relay-04"
+
+// 저가 옵토릴레이 보드는 보통 active-LOW(LOW를 줘야 릴레이가 동작)다.
+// 실제 보드로 극성을 확인한 뒤 필요하면 HIGH로 바꿀 것 - active-high로 가정하지 말 것.
+#define RELAY_ACTIVE_LEVEL LOW

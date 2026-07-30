@@ -18,6 +18,10 @@
 
 #include "config.h"
 
+#ifndef HAS_PIR
+#define HAS_PIR 1
+#endif
+
 static const int PIR_PIN = D0;
 static const unsigned long PUSH_INTERVAL_MS = 30000;
 
@@ -84,9 +88,11 @@ void pushReadings() {
     humidity["value"] = bme.readHumidity();
   }
 
+#if HAS_PIR
   JsonObject motion = readings.add<JsonObject>();
   motion["metric"] = "motion";
   motion["value"] = digitalRead(PIR_PIN) == HIGH ? 1.0 : 0.0;
+#endif
 
   int status = postJson(String("/devices/") + DEVICE_ID + "/readings", doc);
   Serial.print("readings 응답 코드: ");
@@ -95,7 +101,9 @@ void pushReadings() {
 
 void setup() {
   Serial.begin(115200);
+#if HAS_PIR
   pinMode(PIR_PIN, INPUT);
+#endif
 
   Wire.begin();
   bmeReady = bme.begin(0x76, &Wire);
