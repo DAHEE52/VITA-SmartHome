@@ -36,6 +36,26 @@ const GRID_GAP = 14;
 // 등)가 30초마다 값을 push하므로 그보다 촘촘히 조회해봐야 새 값이 없다.
 const WATT_POLL_INTERVAL_MS = 20000;
 
+// Tapo 스마트 콘센트는 3초마다 전력값을 push하므로, 이보다 훨씬 오래 새 값이 없으면 "콘센트 자체가
+// 지금 통신이 안 되는 상태"(전원이 뽑혔거나 와이파이가 끊김)로 본다. WATT_POLL_INTERVAL_MS(20초)
+// 주기로 조회하는 걸 감안해 여유 있게 잡음.
+const OUTLET_OFFLINE_THRESHOLD_MS = 30000;
+
+// 전력 측정기 카드/설정창에 공통으로 쓰는 상태 판정.
+// - 콘센트 자체가 최근에 값을 보낸 적이 없으면(recorded_at이 없거나 너무 오래됨) "해제됨"으로 본다 -
+//   콘센트 전원이 뽑혔거나 와이파이가 끊겼을 때.
+// - 콘센트는 살아있는데 소비전력이 0에 가까우면, 콘센트에 아무 기기도 안 꽂혀있는(또는 완전히 꺼진)
+//   것으로 본다.
+type PowerStatus = { kind: 'ok'; watt: number } | { kind: 'no-device' } | { kind: 'outlet-offline' };
+
+function computePowerStatus(power_w: number | null, recorded_at: string | null): PowerStatus {
+  if (recorded_at == null) return { kind: 'outlet-offline' };
+  const age = Date.now() - new Date(recorded_at).getTime();
+  if (age > OUTLET_OFFLINE_THRESHOLD_MS) return { kind: 'outlet-offline' };
+  if (power_w == null || power_w <= 0) return { kind: 'no-device' };
+  return { kind: 'ok', watt: power_w };
+}
+
 // 현재 켜져있는 기기 대수를 보여주는 상단 카드
 function ActiveDevicesCard({ scale, count }: { scale: number; count: number }) {
   return (
@@ -60,11 +80,11 @@ function DeviceCard({
   cellSize: number;
   onPress: () => void;
 }) {
-  const [watt, setWatt] = useState<number | null>(null);
+  const [powerStatus, setPowerStatus] = useState<PowerStatus | null>(null);
 
   useEffect(() => {
     if (device.type !== 'power_monitor') {
-      setWatt(null);
+      setPowerStatus(null);
       return;
     }
     let cancelled = false;
@@ -72,7 +92,7 @@ function DeviceCard({
       api
         .getLatestPower(device.id)
         .then((r) => {
-          if (!cancelled) setWatt(r.power_w);
+          if (!cancelled) setPowerStatus(computePowerStatus(r.power_w, r.recorded_at));
         })
         .catch(() => {});
     };
@@ -95,8 +115,18 @@ function DeviceCard({
       <Text style={[styles.roomLabel, { fontSize: 18 * scale }]} numberOfLines={2}>
         {device.name}
       </Text>
-      {watt !== null && (
-        <Text style={[styles.deviceWattText, { fontSize: 12 * scale }]}>{Math.round(watt)}W</Text>
+      {powerStatus?.kind === 'ok' && (
+        <Text style={[styles.deviceWattText, { fontSize: 12 * scale }]}>{Math.round(powerStatus.watt)}W</Text>
+      )}
+      {powerStatus?.kind === 'no-device' && (
+        <Text style={[styles.deviceWattText, { fontSize: 12 * scale }]} numberOfLines={1}>
+          연결된 기기 없음
+        </Text>
+      )}
+      {powerStatus?.kind === 'outlet-offline' && (
+        <Text style={[styles.deviceWattText, styles.deviceOfflineText, { fontSize: 12 * scale }]} numberOfLines={1}>
+          콘센트 해제됨
+        </Text>
       )}
     </AnimatedPressable>
   );
@@ -270,7 +300,7 @@ function DeviceSettingsModal({
 }) {
   const [nameInput, setNameInput] = useState('');
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const [watt, setWatt] = useState<number | null>(null);
+  const [powerStatus, setPowerStatus] = useState<PowerStatus | null>(null);
 
   useEffect(() => {
     if (device) {
@@ -281,7 +311,7 @@ function DeviceSettingsModal({
 
   useEffect(() => {
     if (!device || device.type !== 'power_monitor') {
-      setWatt(null);
+      setPowerStatus(null);
       return;
     }
     let cancelled = false;
@@ -289,7 +319,7 @@ function DeviceSettingsModal({
       api
         .getLatestPower(device.id)
         .then((r) => {
-          if (!cancelled) setWatt(r.power_w);
+          if (!cancelled) setPowerStatus(computePowerStatus(r.power_w, r.recorded_at));
         })
         .catch(() => {});
     };
@@ -355,8 +385,16 @@ function DeviceSettingsModal({
                 </AnimatedPressable>
               </View>
 
-              {watt !== null && (
-                <Text style={styles.deviceSectionHint}>실시간 소비전력: {Math.round(watt)}W</Text>
+              {powerStatus?.kind === 'ok' && (
+                <Text style={styles.deviceSectionHint}>실시간 소비전력: {Math.round(powerStatus.watt)}W</Text>
+              )}
+              {powerStatus?.kind === 'no-device' && (
+                <Text style={styles.deviceSectionHint}>연결된 기기 없음</Text>
+              )}
+              {powerStatus?.kind === 'outlet-offline' && (
+                <Text style={[styles.deviceSectionHint, styles.deviceOfflineHint]}>
+                  해당 스마트 콘센트가 해제됨
+                </Text>
               )}
 
               <View style={styles.deviceRow}>
@@ -561,6 +599,9 @@ const styles = StyleSheet.create({
     color: colors.textGray2,
     marginTop: 6,
   },
+  deviceOfflineText: {
+    color: colors.red,
+  },
   addCircle: {
     backgroundColor: colors.card,
     alignItems: 'center',
@@ -671,6 +712,10 @@ const styles = StyleSheet.create({
     color: colors.textGray,
     lineHeight: 16,
     marginBottom: 10,
+  },
+  deviceOfflineHint: {
+    color: colors.red,
+    fontWeight: '600',
   },
   deviceRow: {
     flexDirection: 'row',
