@@ -13,9 +13,10 @@ KST = ZoneInfo("Asia/Seoul")
 # 기기가 몇 초~몇 분 간격으로 계속 전력값을 push하므로, 조회 기간을 안 잘라내면 기기 하나당
 # sensor_readings 행이 시간이 지날수록(기기/사용자 수와 무관하게 그냥 "서비스 운영 기간"에 비례해)
 # 계속 쌓여 이 쿼리가 점점 느려진다 - 실제로 화면에 보여주는 건 period별로 최근 몇 개 구간뿐이므로
-# (EnergyUsageScreen의 POINT_COUNT), 그보다 넉넉하게만 거슬러 올라가면 충분하다.
-# month는 "이번 달 대비 전월"(aggregateByMonth) 계산 때문에 최소 두 달치가 필요해서 더 넉넉히 잡는다.
-_LOOKBACK_DAYS: dict[Period, int] = {"day": 3, "month": 70, "year": 365 * 4}
+# (EnergyUsageScreen의 POINT_COUNT: day=7일, month=5개월, year=5개년), 그보다 넉넉하게만 거슬러
+# 올라가면 충분하다 - 정확히 그 개수만큼만 잡으면 버킷 경계의 타이밍(몇 ms 차이)에 따라 가장 오래된
+# 구간이 빠질 수 있어서 여유를 둔다.
+_LOOKBACK_DAYS: dict[Period, int] = {"day": 14, "month": 400, "year": 365 * 6}
 
 
 def _bucket_key(dt: datetime, period: Period) -> str:
