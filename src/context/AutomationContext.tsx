@@ -15,6 +15,7 @@ import { useCalendar, ScheduleItem } from './CalendarContext';
 import { useRooms, Room } from './RoomsContext';
 import { useNotifications } from './NotificationsContext';
 import { useSleep } from './SleepContext';
+import { usePresence } from './PresenceContext';
 import { rollbackOnFailure } from '../utils/optimisticUpdate';
 
 const CHECK_INTERVAL_MS = 20000; // 20초마다 모든 규칙의 발동 여부를 검사한다.
@@ -29,7 +30,10 @@ export type AutomationTrigger =
   // 자동화 규칙 실행 로직상 "오늘 날짜에 집을 비우는 일정이 있는가"만 볼 뿐 둘을 구분할 필요가
   // 없어서 트리거는 하나로 합쳤다. 캘린더 쪽 kind 태그(outing/overnight) 자체는 그대로 유지된다.
   | { kind: 'routine'; routineId: string } // 특정 DAILY(요일별 루틴) 항목 하나를 참조
-  | { kind: 'sleep' }; // 취침 모드가 실제로 시작될 때(SleepContext state가 'active'로 바뀌는 순간)
+  | { kind: 'sleep' } // 취침 모드가 실제로 시작될 때(SleepContext state가 'active'로 바뀌는 순간)
+  | { kind: 'presence'; when: 'home' | 'away' }; // 카메라(PresenceContext.isHome)가 재실/외출로
+  // "막 바뀐 순간"(edge) - away 트리거(캘린더에 미리 등록한 날짜)와 달리 실시간 감지라 그 자리에서
+  // 바로 실행된다. when='home'이면 귀가 감지 시, 'away'면 외출(부재) 감지 시.
 
 // 규칙마다 대상 콘센트/조명(deviceId)을 직접 골라서 켜거나 끈다 - 방 전체 일괄 차단이나 이름 키워드
 // 추정("조명"/"에어컨" 등) 대신, 사용자가 체크한 기기에만 정확히 적용된다.
@@ -125,6 +129,7 @@ function hasOccurrenceToday(
 export function describeTrigger(trigger: AutomationTrigger, dailyItems: ScheduleItem[]): string {
   if (trigger.kind === 'away') return '외출·외박 일정';
   if (trigger.kind === 'sleep') return '취침 모드';
+  if (trigger.kind === 'presence') return trigger.when === 'home' ? '재실 감지' : '외출 감지';
   const routine = dailyItems.find((it) => it.id === trigger.routineId);
   if (!routine) return '삭제된 루틴';
   return routine.label ? `루틴 "${routine.label}"` : '요일별 루틴';
@@ -157,6 +162,7 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   const { rooms, setDevicePowerById } = useRooms();
   const { pushNotification } = useNotifications();
   const { state: sleepState } = useSleep();
+  const { isHome } = usePresence();
 
   const [rules, setRules] = useState<AutomationRule[]>([]);
 
@@ -175,6 +181,8 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   pushNotificationRef.current = pushNotification;
   const sleepStateRef = useRef(sleepState);
   sleepStateRef.current = sleepState;
+  const isHomeRef = useRef(isHome);
+  isHomeRef.current = isHome;
 
   // 이미 실행한 (규칙, 날짜) 조합을 기록해 같은 발동이 하루 안에서 여러 번(매 tick마다) 반복
   // 실행되는 걸 막는다. 렌더와 무관한 값이라 state가 아니라 ref로 둔다.
@@ -182,6 +190,10 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   // 취침 모드 트리거는 "시각"이 아니라 "state가 active로 바뀌는 순간"에 반응한다 - 매 tick(20초)마다
   // 계속 재실행되지 않도록, 직전 tick의 취침 상태를 기억해 "막 active가 된 순간"만 골라낸다.
   const wasSleepActiveRef = useRef(false);
+  // presence 트리거도 같은 방식(edge 감지) - 직전 tick의 재실 여부를 기억해 "막 바뀐 순간"만 골라낸다.
+  // null = 아직 기준값이 없는 최초 상태 - 앱을 막 켰을 때 PresenceContext의 기본값(isHome=true)을
+  // "방금 귀가함"으로 오해해 엉뚱하게 트리거하지 않도록, 첫 tick은 기준값만 잡고 트리거는 건너뛴다.
+  const wasHomeRef = useRef<boolean | null>(null);
 
   // set_power 액션 실행 - 규칙에서 고른 기기(deviceIds)만 정확히 켜거나 끈다.
   // 조명(LIGHT_DEVICE_ID)은 아직 실제 기기가 아니라 room.devices에 없으므로 전원 제어 대상에서는
@@ -216,6 +228,13 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
       const justFellAsleep = isSleepActive && !wasSleepActiveRef.current;
       wasSleepActiveRef.current = isSleepActive;
 
+      // presence도 마찬가지로 "막 바뀐 순간"만 - 기준값(wasHomeRef)이 아직 없는 최초 tick에서는
+      // 지금 값을 기준으로 잡기만 하고 트리거하지 않는다(위 주석 참고).
+      const prevHome = wasHomeRef.current;
+      const justArrivedHome = prevHome === false && isHomeRef.current === true;
+      const justLeftHome = prevHome === true && isHomeRef.current === false;
+      wasHomeRef.current = isHomeRef.current;
+
       for (const rule of rulesRef.current) {
         if (!rule.enabled) continue;
 
@@ -224,6 +243,15 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
           const room = roomsRef.current.find((r) => r.id === rule.roomId);
           if (!room) continue;
           runAction(room, rule.action, '취침 모드');
+          continue;
+        }
+
+        if (rule.trigger.kind === 'presence') {
+          const fired = rule.trigger.when === 'home' ? justArrivedHome : justLeftHome;
+          if (!fired) continue;
+          const room = roomsRef.current.find((r) => r.id === rule.roomId);
+          if (!room) continue;
+          runAction(room, rule.action, rule.trigger.when === 'home' ? '재실 감지' : '외출 감지');
           continue;
         }
 
