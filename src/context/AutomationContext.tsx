@@ -20,10 +20,10 @@ import { rollbackOnFailure } from '../utils/optimisticUpdate';
 
 const CHECK_INTERVAL_MS = 20000; // 20초마다 모든 규칙의 발동 여부를 검사한다.
 
-// 조명은 아직 실제로 연동된 기기가 없어서 room.devices에 들어있지 않다 - 연동 전까지는 이 고정
-// id를 자동화 규칙의 대상으로 선택만 해 둘 수 있게 하고, 실제 제어 코드는 조명 연동 후에 추가한다.
-// AutomationScreen(대상 선택 UI)과 AutomationContext(알림 문구 조립) 양쪽에서 같은 값을 써야 하므로 여기서 export한다.
-export const LIGHT_DEVICE_ID = 'light';
+// 조명(living-light-01)은 이제 실제 기기로 room.devices에 들어있어서 다른 콘센트와 똑같이
+// deviceIds에 그 실제 id를 넣어 고른다 - 예전엔 아직 연동 전이라 이 고정 id로 임시 처리했었다.
+// 밝기(brightness) 표시용으로만 이 id를 특별 취급한다(아래 runAction 참고).
+const LIGHT_DEVICE_ID = 'living-light-01';
 
 export type AutomationTrigger =
   | { kind: 'away' } // 캘린더 SPECIAL 중 kind='outing'(외출 예정) 또는 'overnight'(외박 일정) 전체 -
@@ -37,7 +37,7 @@ export type AutomationTrigger =
 
 // 규칙마다 대상 콘센트/조명(deviceId)을 직접 골라서 켜거나 끈다 - 방 전체 일괄 차단이나 이름 키워드
 // 추정("조명"/"에어컨" 등) 대신, 사용자가 체크한 기기에만 정확히 적용된다.
-// brightness(0~100)는 deviceIds에 LIGHT_DEVICE_ID가 포함되고 on===true일 때만 의미가 있는
+// brightness(0~100)는 deviceIds에 조명(living-light-01)이 포함되고 on===true일 때만 의미가 있는
 // 조명 전용 값이다 - 스마트 콘센트는 on/off만 지원하므로 이 값을 쓰지 않는다.
 export type AutomationAction = { kind: 'set_power'; deviceIds: string[]; on: boolean; brightness?: number };
 
@@ -196,16 +196,16 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   const wasHomeRef = useRef<boolean | null>(null);
 
   // set_power 액션 실행 - 규칙에서 고른 기기(deviceIds)만 정확히 켜거나 끈다.
-  // 조명(LIGHT_DEVICE_ID)은 아직 실제 기기가 아니라 room.devices에 없으므로 전원 제어 대상에서는
-  // 빠지지만, 선택됐다는 사실 자체는 알림 문구에 그대로 반영한다(실제 연동 전까지의 임시 처리).
   const runAction = (room: Room, action: AutomationAction, triggerText: string) => {
     const targets = room.devices.filter((d) => action.deviceIds.includes(d.id));
     targets.forEach((d) => setDevicePowerByIdRef.current(room.id, d.id, action.on));
 
-    const names = targets.map((d) => d.name);
-    if (action.deviceIds.includes(LIGHT_DEVICE_ID)) {
-      names.push(action.on && action.brightness != null ? `조명(밝기 ${action.brightness}%)` : '조명');
-    }
+    // 조명(living-light-01)이 대상이고 켜는 액션이면 밝기까지 알림 문구에 표시한다.
+    const names = targets.map((d) =>
+      d.id === LIGHT_DEVICE_ID && action.on && action.brightness != null
+        ? `${d.name}(밝기 ${action.brightness}%)`
+        : d.name
+    );
 
     if (names.length === 0) {
       pushNotificationRef.current('🔁 자동화 실행', `${triggerText}이(가) 실행됐지만, 설정된 기기가 없어요.`);

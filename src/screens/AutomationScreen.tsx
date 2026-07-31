@@ -4,12 +4,12 @@
 //      "+" 규칙 추가 버튼 / 하단 네비(홈)
 //
 // 캘린더에 등록한 "외출·외박 일정"(SPECIAL 일정 중 kind='outing'|'overnight' 전체, 자동화 트리거
-// 관점에서는 구분하지 않는다) 또는 "요일별 루틴"(DAILY 일정), 취침 모드, "재실·외출 감지"(카메라가
-// 실시간으로 감지한 재실 여부가 막 바뀐 순간 - PresenceContext)를 트리거로 골라, 지정한 콘센트를
-// 켜고 끄는 규칙을 사용자가 직접 만든다. 캘린더의 외출·외박 일정과 달리 presence 트리거는 미리
-// 등록해둔 날짜가 아니라 카메라가 실제로 감지하는 순간 바로 실행된다.
+// 관점에서는 구분하지 않는다) 또는 "요일별 루틴"(DAILY 일정)을 트리거로 골라, 지정한 콘센트를
+// 켜고 끄는 규칙을 사용자가 직접 만든다. 취침 모드는 이 화면 위쪽의 전용 "🛏 취침 모드" 버튼으로,
+// 재실·외출 감지는 별도 UI 없이(자동화 규칙 트리거 선택지에서는 제외) 관리한다 - 둘 다
+// AutomationContext/SleepContext 엔진 자체는 그대로 지원하지만 이 화면에서 새로 만들 수는 없다.
 // 실제 발동/실행은 화면과 무관하게 AutomationContext/SleepContext가 계속 감시한다.
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, TextInput, ScrollView, Switch } from 'react-native';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,15 +21,18 @@ import { PlusIcon, AutomationIcon } from '../components/icons';
 import { useCalendar, ScheduleItem } from '../context/CalendarContext';
 import { useRooms, Room, Device } from '../context/RoomsContext';
 import { useSleep } from '../context/SleepContext';
-import { SleepDeviceConfig } from '../api/client';
+import { SleepDeviceConfig, SleepPreset } from '../api/client';
 import {
   useAutomation,
   AutomationRule,
   AutomationTrigger,
   AutomationAction,
   describeTrigger,
-  LIGHT_DEVICE_ID,
 } from '../context/AutomationContext';
+
+// 조명(living-light-01)이 대상이고 켜는 액션이면 밝기까지 함께 보여준다 - AutomationContext의
+// runAction과 동일한 규칙.
+const LIGHT_DEVICE_ID = 'living-light-01';
 
 const SCREEN_PADDING = 20;
 const WEEKDAY_SHORT = ['일', '월', '화', '수', '목', '금', '토'];
@@ -46,10 +49,11 @@ function summarizeWeekdays(weekdays?: number[]): string {
 function describeAction(action: AutomationAction, room: Room | undefined): string {
   const names = (room?.devices ?? [])
     .filter((d) => action.deviceIds.includes(d.id))
-    .map((d) => d.name);
-  if (action.deviceIds.includes(LIGHT_DEVICE_ID)) {
-    names.push(action.on && action.brightness != null ? `조명(밝기 ${action.brightness}%)` : '조명');
-  }
+    .map((d) =>
+      d.id === LIGHT_DEVICE_ID && action.on && action.brightness != null
+        ? `${d.name}(밝기 ${action.brightness}%)`
+        : d.name
+    );
   const verb = action.on ? '켜기' : '끄기';
   if (names.length === 0) return `(선택된 기기 없음) · ${verb}`;
   return `${names.join(', ')} · ${verb}`;
@@ -175,25 +179,36 @@ function SleepDeviceRow({
 }
 
 // "🛏 취침 모드" 버튼을 누르면 뜨는 모달 - 취침 감지 조건(시작 시각/무움직임 시간)과 취침 모드로
-// 전환될 기기를 설정한다. 규칙(AutomationRule)과 달리 "저장" 버튼 없이 조작 즉시 반영된다
-// (예전 SleepModeScreen과 동일한 동작 - useSleep().setPreset이 매번 바로 서버에 저장함).
+// 전환될 기기를 설정한다. RuleEditModal과 동일하게 로컬 draft에서만 편집하다가 "저장"을 눌러야
+// 서버에 반영된다 - "닫기"는 draft를 버리고(서버에는 아무 영향 없이) 그냥 창을 닫는다.
 function SleepPresetModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { preset, setPreset } = useSleep();
   const { rooms } = useRooms();
   const allDevices = rooms.flatMap((r) => r.devices);
 
+  const [draft, setDraft] = useState<SleepPreset | null>(null);
+
+  useEffect(() => {
+    if (visible) setDraft(preset);
+  }, [visible, preset]);
+
   const toggleIncluded = (deviceId: string) => {
-    if (!preset) return;
-    const isIncluded = preset.devices.some((d) => d.device_id === deviceId);
+    if (!draft) return;
+    const isIncluded = draft.devices.some((d) => d.device_id === deviceId);
     const nextDevices = isIncluded
-      ? preset.devices.filter((d) => d.device_id !== deviceId)
-      : [...preset.devices, { device_id: deviceId, on: false }];
-    setPreset({ devices: nextDevices });
+      ? draft.devices.filter((d) => d.device_id !== deviceId)
+      : [...draft.devices, { device_id: deviceId, on: false }];
+    setDraft({ ...draft, devices: nextDevices });
   };
 
   const setDeviceOn = (deviceId: string, on: boolean) => {
-    if (!preset) return;
-    setPreset({ devices: preset.devices.map((d) => (d.device_id === deviceId ? { ...d, on } : d)) });
+    if (!draft) return;
+    setDraft({ ...draft, devices: draft.devices.map((d) => (d.device_id === deviceId ? { ...d, on } : d)) });
+  };
+
+  const handleSave = () => {
+    if (draft) setPreset(draft);
+    onClose();
   };
 
   return (
@@ -203,7 +218,7 @@ function SleepPresetModal({ visible, onClose }: { visible: boolean; onClose: () 
           <ScrollView showsVerticalScrollIndicator={false}>
             <Text style={styles.modalTitle}>🛏 취침 모드</Text>
 
-            {!preset ? (
+            {!draft ? (
               <Text style={styles.hintText}>설정을 불러오는 중이에요...</Text>
             ) : (
               <>
@@ -214,21 +229,21 @@ function SleepPresetModal({ visible, onClose }: { visible: boolean; onClose: () 
                 </Text>
                 <SleepStepperRow
                   label="취침 감지 시작 시각"
-                  value={preset.bedtime_hour}
+                  value={draft.bedtime_hour}
                   unit="시"
                   step={1}
                   min={0}
                   max={23}
-                  onChange={(v) => setPreset({ bedtime_hour: v })}
+                  onChange={(v) => setDraft({ ...draft, bedtime_hour: v })}
                 />
                 <SleepStepperRow
                   label="무움직임 감지 시간"
-                  value={preset.no_motion_seconds}
+                  value={draft.no_motion_seconds}
                   unit="초"
                   step={10}
                   min={10}
                   max={3600}
-                  onChange={(v) => setPreset({ no_motion_seconds: v })}
+                  onChange={(v) => setDraft({ ...draft, no_motion_seconds: v })}
                 />
 
                 <Text style={[styles.fieldLabel, { marginTop: 18 }]}>🌙 취침 모드로 전환될 기기 설정</Text>
@@ -245,7 +260,7 @@ function SleepPresetModal({ visible, onClose }: { visible: boolean; onClose: () 
                     <SleepDeviceRow
                       key={device.id}
                       name={device.name}
-                      config={preset.devices.find((d) => d.device_id === device.id)}
+                      config={draft.devices.find((d) => d.device_id === device.id)}
                       onToggleIncluded={() => toggleIncluded(device.id)}
                       onSetOn={(on) => setDeviceOn(device.id, on)}
                     />
@@ -254,13 +269,14 @@ function SleepPresetModal({ visible, onClose }: { visible: boolean; onClose: () 
               </>
             )}
 
-            <AnimatedPressable
-              style={[styles.modalCloseButton, styles.modalCloseButtonSolo]}
-              onPress={onClose}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.modalCloseText}>닫기</Text>
-            </AnimatedPressable>
+            <View style={styles.modalBottomRow}>
+              <AnimatedPressable style={styles.modalCloseButton} onPress={onClose} activeOpacity={0.7}>
+                <Text style={styles.modalCloseText}>닫기</Text>
+              </AnimatedPressable>
+              <AnimatedPressable style={styles.saveButton} onPress={handleSave} activeOpacity={0.7} disabled={!draft}>
+                <Text style={styles.saveButtonText}>저장</Text>
+              </AnimatedPressable>
+            </View>
           </ScrollView>
         </Pressable>
       </Pressable>
@@ -268,18 +284,12 @@ function SleepPresetModal({ visible, onClose }: { visible: boolean; onClose: () 
   );
 }
 
-type TriggerKind = 'away' | 'routine' | 'sleep' | 'presence';
+// "어떤 상황에 실행할까요" 선택지 - 취침 모드/재실·외출 감지는 여기서 뺐다(위 헤더 코멘트 참고).
+type TriggerKind = 'away' | 'routine';
 
 const TRIGGER_OPTIONS: { value: TriggerKind; label: string }[] = [
   { value: 'away', label: '외출·외박 일정' },
   { value: 'routine', label: '요일별 루틴' },
-  { value: 'sleep', label: '취침 모드' },
-  { value: 'presence', label: '재실·외출 감지' },
-];
-
-const PRESENCE_WHEN_OPTIONS: { value: 'home' | 'away'; label: string }[] = [
-  { value: 'home', label: '재실 감지 시(귀가)' },
-  { value: 'away', label: '외출 감지 시(부재)' },
 ];
 
 const POWER_OPTIONS: { value: boolean; label: string }[] = [
@@ -329,6 +339,7 @@ function RuleCard({
             : trigger.kind === 'presence'
             ? `${trigger.when === 'home' ? '재실' : '외출(부재)'}이 감지되면 즉시 실행`
             : describeExecuteTime(rule.executeTime)}
+          {(trigger.kind === 'sleep' || trigger.kind === 'presence') && ' (이 화면에서는 더 이상 새로 만들 수 없어요)'}
         </Text>
         <Text style={styles.ruleAction} numberOfLines={1}>
           {describeAction(rule.action, room)}
@@ -365,7 +376,6 @@ function RuleEditModal({
 }) {
   const [triggerKind, setTriggerKind] = useState<TriggerKind>('away');
   const [routineId, setRoutineId] = useState<string | null>(null);
-  const [presenceWhen, setPresenceWhen] = useState<'home' | 'away'>('home');
   const [executeTimeText, setExecuteTimeText] = useState('07:00');
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [powerOn, setPowerOn] = useState(true);
@@ -378,9 +388,10 @@ function RuleEditModal({
   React.useEffect(() => {
     if (!visible) return;
     if (initial) {
-      setTriggerKind(initial.trigger.kind);
+      // initial이 sleep/presence 트리거인 예전 규칙이면(이 화면에서는 더 이상 안 만들지만 수정
+      // 화면에는 들어올 수 있음) 트리거 선택은 기본값(away)으로 되돌린다 - 골라둔 기기/전원은 그대로 둔다.
+      setTriggerKind(initial.trigger.kind === 'routine' ? 'routine' : 'away');
       setRoutineId(initial.trigger.kind === 'routine' ? initial.trigger.routineId : null);
-      setPresenceWhen(initial.trigger.kind === 'presence' ? initial.trigger.when : 'home');
       setExecuteTimeText(initial.executeTime);
       setSelectedDeviceIds(initial.action.deviceIds);
       setPowerOn(initial.action.on);
@@ -388,7 +399,6 @@ function RuleEditModal({
     } else {
       setTriggerKind('away');
       setRoutineId(dailyItems[0]?.id ?? null);
-      setPresenceWhen('home');
       setExecuteTimeText('07:00');
       setSelectedDeviceIds([]);
       setPowerOn(true);
@@ -396,14 +406,8 @@ function RuleEditModal({
     }
   }, [visible, initial]);
 
-  // 취침 모드는 "시각"이 아니라 "잠들었다고 판단되는 순간"에 반응하는 트리거라 시각 입력이 필요 없고,
-  // 액션도 "조명 끄기"로 고정이라 기기/전원 선택 UI 자체가 필요 없다(아래 isDeviceSelectable 참고).
-  // presence(재실·외출 감지)도 "카메라가 감지한 순간"에 바로 반응하므로 시각 입력이 필요 없다 -
-  // 다만 조작할 기기는 취침 모드처럼 고정이 아니라 사용자가 직접 고른다(isDeviceSelectable 그대로 true).
-  const isTimeless = triggerKind === 'sleep' || triggerKind === 'presence';
-  const isDeviceSelectable = triggerKind !== 'sleep';
   // 조명이 선택되고 "켜기"일 때만 밝기가 의미 있다 - 콘센트는 on/off만 지원하고, 끌 때는 밝기가 무의미하다.
-  const isBrightnessRelevant = isDeviceSelectable && selectedDeviceIds.includes(LIGHT_DEVICE_ID) && powerOn;
+  const isBrightnessRelevant = selectedDeviceIds.includes(LIGHT_DEVICE_ID) && powerOn;
   const brightnessValid =
     !isBrightnessRelevant ||
     (brightnessText.trim() !== '' && Number(brightnessText) >= MIN_BRIGHTNESS && Number(brightnessText) <= MAX_BRIGHTNESS);
@@ -411,8 +415,8 @@ function RuleEditModal({
   const canSave =
     !!roomId &&
     (triggerKind !== 'routine' || !!routineId) &&
-    (isTimeless || isValidHHMM(executeTimeText)) &&
-    (!isDeviceSelectable || selectedDeviceIds.length > 0) &&
+    isValidHHMM(executeTimeText) &&
+    selectedDeviceIds.length > 0 &&
     brightnessValid;
 
   const toggleDevice = (deviceId: string) => {
@@ -424,21 +428,14 @@ function RuleEditModal({
   const handleSave = () => {
     if (canSave && roomId) {
       const trigger: AutomationTrigger =
-        triggerKind === 'routine'
-          ? { kind: 'routine', routineId: routineId! }
-          : triggerKind === 'presence'
-          ? { kind: 'presence', when: presenceWhen }
-          : { kind: triggerKind };
-      // 취침 모드는 "조명 끄기"로 고정 - 사용자가 고른 기기/전원 상태를 쓰지 않는다.
-      const action: AutomationAction = !isDeviceSelectable
-        ? { kind: 'set_power', deviceIds: [LIGHT_DEVICE_ID], on: false }
-        : {
-            kind: 'set_power',
-            deviceIds: selectedDeviceIds,
-            on: powerOn,
-            ...(isBrightnessRelevant ? { brightness: Number(brightnessText) } : {}),
-          };
-      onSave({ trigger, executeTime: isTimeless ? '00:00' : executeTimeText, roomId, action });
+        triggerKind === 'routine' ? { kind: 'routine', routineId: routineId! } : { kind: 'away' };
+      const action: AutomationAction = {
+        kind: 'set_power',
+        deviceIds: selectedDeviceIds,
+        on: powerOn,
+        ...(isBrightnessRelevant ? { brightness: Number(brightnessText) } : {}),
+      };
+      onSave({ trigger, executeTime: executeTimeText, roomId, action });
     }
     onClose();
   };
@@ -466,23 +463,6 @@ function RuleEditModal({
               ))}
             </View>
 
-            {triggerKind === 'presence' && (
-              <View style={styles.chipRow}>
-                {PRESENCE_WHEN_OPTIONS.map((opt) => (
-                  <AnimatedPressable
-                    key={opt.value}
-                    style={[styles.chip, presenceWhen === opt.value && styles.chipSelected]}
-                    onPress={() => setPresenceWhen(opt.value)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.chipText, presenceWhen === opt.value && styles.chipTextSelected]}>
-                      {opt.label}
-                    </Text>
-                  </AnimatedPressable>
-                ))}
-              </View>
-            )}
-
             {triggerKind === 'routine' &&
               (dailyItems.length === 0 ? (
                 <Text style={styles.hintText}>캘린더에서 먼저 루틴(DAILY 일정)을 추가해 주세요.</Text>
@@ -506,96 +486,70 @@ function RuleEditModal({
                 </View>
               ))}
 
-            {!isTimeless && (
-              <>
-                <Text style={styles.fieldLabel}>언제 실행할까요</Text>
-                <TextInput
-                  style={styles.numberInput}
-                  value={executeTimeText}
-                  onChangeText={setExecuteTimeText}
-                  placeholder="07:00"
-                  placeholderTextColor={colors.textGray}
-                  keyboardType="numbers-and-punctuation"
-                />
-                {!isValidHHMM(executeTimeText) && (
-                  <Text style={styles.hintText}>"07:00"처럼 시:분 형식으로 입력해 주세요.</Text>
-                )}
-              </>
+            <Text style={styles.fieldLabel}>언제 실행할까요</Text>
+            <TextInput
+              style={styles.numberInput}
+              value={executeTimeText}
+              onChangeText={setExecuteTimeText}
+              placeholder="07:00"
+              placeholderTextColor={colors.textGray}
+              keyboardType="numbers-and-punctuation"
+            />
+            {!isValidHHMM(executeTimeText) && (
+              <Text style={styles.hintText}>"07:00"처럼 시:분 형식으로 입력해 주세요.</Text>
             )}
 
-            {isDeviceSelectable ? (
-              <>
-                <Text style={styles.fieldLabel}>어떤 기기를 조작할까요</Text>
-                <View style={styles.chipRowWrap}>
-                  <AnimatedPressable
-                    style={[styles.chip, selectedDeviceIds.includes(LIGHT_DEVICE_ID) && styles.chipSelected]}
-                    onPress={() => toggleDevice(LIGHT_DEVICE_ID)}
-                    activeOpacity={0.7}
+            <Text style={styles.fieldLabel}>어떤 기기를 조작할까요</Text>
+            <View style={styles.chipRowWrap}>
+              {devices.map((d) => (
+                <AnimatedPressable
+                  key={d.id}
+                  style={[styles.chip, selectedDeviceIds.includes(d.id) && styles.chipSelected]}
+                  onPress={() => toggleDevice(d.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[styles.chipText, selectedDeviceIds.includes(d.id) && styles.chipTextSelected]}
+                    numberOfLines={1}
                   >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        selectedDeviceIds.includes(LIGHT_DEVICE_ID) && styles.chipTextSelected,
-                      ]}
-                    >
-                      조명
-                    </Text>
-                  </AnimatedPressable>
-                  {devices.map((d) => (
-                    <AnimatedPressable
-                      key={d.id}
-                      style={[styles.chip, selectedDeviceIds.includes(d.id) && styles.chipSelected]}
-                      onPress={() => toggleDevice(d.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[styles.chipText, selectedDeviceIds.includes(d.id) && styles.chipTextSelected]}
-                        numberOfLines={1}
-                      >
-                        {d.name}
-                      </Text>
-                    </AnimatedPressable>
-                  ))}
-                </View>
-                {devices.length === 0 && (
-                  <Text style={styles.hintText}>등록된 스마트 콘센트가 없어요. 먼저 기기를 추가해 주세요.</Text>
-                )}
+                    {d.name}
+                  </Text>
+                </AnimatedPressable>
+              ))}
+            </View>
+            {devices.length === 0 && (
+              <Text style={styles.hintText}>등록된 스마트 콘센트가 없어요. 먼저 기기를 추가해 주세요.</Text>
+            )}
 
-                <Text style={styles.fieldLabel}>어떻게 할까요</Text>
-                <View style={styles.chipRow}>
-                  {POWER_OPTIONS.map((opt) => (
-                    <AnimatedPressable
-                      key={String(opt.value)}
-                      style={[styles.chip, powerOn === opt.value && styles.chipSelected]}
-                      onPress={() => setPowerOn(opt.value)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.chipText, powerOn === opt.value && styles.chipTextSelected]}>
-                        {opt.label}
-                      </Text>
-                    </AnimatedPressable>
-                  ))}
-                </View>
+            <Text style={styles.fieldLabel}>어떻게 할까요</Text>
+            <View style={styles.chipRow}>
+              {POWER_OPTIONS.map((opt) => (
+                <AnimatedPressable
+                  key={String(opt.value)}
+                  style={[styles.chip, powerOn === opt.value && styles.chipSelected]}
+                  onPress={() => setPowerOn(opt.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, powerOn === opt.value && styles.chipTextSelected]}>
+                    {opt.label}
+                  </Text>
+                </AnimatedPressable>
+              ))}
+            </View>
 
-                {isBrightnessRelevant && (
-                  <>
-                    <Text style={styles.fieldLabel}>조명 밝기 (0~100)</Text>
-                    <TextInput
-                      style={styles.numberInput}
-                      value={brightnessText}
-                      onChangeText={(v) => setBrightnessText(v.replace(/[^0-9]/g, ''))}
-                      placeholder="80"
-                      placeholderTextColor={colors.textGray}
-                      keyboardType="number-pad"
-                    />
-                    {!brightnessValid && (
-                      <Text style={styles.hintText}>0~100 사이의 숫자로 입력해 주세요.</Text>
-                    )}
-                  </>
-                )}
+            {isBrightnessRelevant && (
+              <>
+                <Text style={styles.fieldLabel}>조명 밝기 (0~100)</Text>
+                <TextInput
+                  style={styles.numberInput}
+                  value={brightnessText}
+                  onChangeText={(v) => setBrightnessText(v.replace(/[^0-9]/g, ''))}
+                  placeholder="80"
+                  placeholderTextColor={colors.textGray}
+                  keyboardType="number-pad"
+                />
+                {!brightnessValid && <Text style={styles.hintText}>0~100 사이의 숫자로 입력해 주세요.</Text>}
               </>
-            ) : (
-              <Text style={styles.hintText}>취침 모드가 시작되면(잠들었다고 판단되면) 조명을 자동으로 꺼요.</Text>
             )}
 
             {onDelete && (
@@ -656,8 +610,8 @@ export default function AutomationScreen() {
         {rules.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Text style={styles.emptyText}>
-              아직 등록된 자동화 규칙이 없어요.{'\n'}외출·외박 일정·요일별 루틴·취침 모드나 카메라의
-              재실·외출 감지에 맞춰 지정한 콘센트를 자동으로 켜고 꺼 보세요.
+              아직 등록된 자동화 규칙이 없어요.{'\n'}외출·외박 일정이나 요일별 루틴에 맞춰 지정한
+              콘센트를 자동으로 켜고 꺼 보세요.
             </Text>
           </Card>
         ) : (
