@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import anomaly, automation, devices, energy, notifications, rooms, schedule, settings, sleep
+from app.routers import anomaly, automation, devices, energy, notifications, rooms, schedule, settings, sleep, weather
 
 app = FastAPI()
 
@@ -22,6 +22,7 @@ app.include_router(notifications.router)
 app.include_router(settings.router)
 app.include_router(automation.router)
 app.include_router(sleep.router)
+app.include_router(weather.router)
 
 
 @app.get("/health")

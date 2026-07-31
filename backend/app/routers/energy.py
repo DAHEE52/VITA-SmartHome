@@ -21,17 +21,17 @@ _LOOKBACK_DAYS: dict[Period, int] = {"day": 3, "month": 70, "year": 365 * 4}
 def _bucket_key(dt: datetime, period: Period) -> str:
     local = dt.astimezone(KST)
     if period == "day":
-        return local.strftime("%Y-%m-%d %H")
-    if period == "month":
         return local.strftime("%Y-%m-%d")
+    if period == "month":
+        return local.strftime("%Y-%m")
     return local.strftime("%Y")
 
 
 def _bucket_label(key: str, period: Period) -> str:
     if period == "day":
-        return key[-2:] + "시"
-    if period == "month":
         return key[5:].replace("-", "/")
+    if period == "month":
+        return str(int(key[5:7])) + "월"
     return key + "년"
 
 
@@ -94,7 +94,7 @@ def energy_usage(period: Period = Query("month")):
                 device_id=device["id"],
                 label=device["label"] or device["id"],
                 points=[
-                    SeriesPoint(x_label=_bucket_label(key, period), value=round(val, 3))
+                    SeriesPoint(x_label=_bucket_label(key, period), value=round(val, 3), sort_key=key)
                     for key, val in sorted(usage.items())
                 ],
             )

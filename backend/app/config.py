@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     # Supabase 프로젝트 설정법: SETUP.md 참고
     supabase_url: str
     supabase_service_key: str
+    # 기상청 공공데이터포털(data.go.kr) "단기예보 조회서비스" 인증키 - 없으면 /weather/current가
+    # condition=null을 반환하고, 앱은 기존처럼 "-"로 표시한다(SETUP.md 발급 방법 참고).
+    kma_api_key: Optional[str] = None
     # DEVICE_API_KEY는 여기서 안 읽는다 - app/deps.py의 verify_device_key가 기기별 개별 키를
     # DB(devices.device_key)에서 직접 확인하기 때문. .env의 DEVICE_API_KEY는 이제 "새 기기가
     # 처음 등록할 때 들고 오는 초기 키"로서 firmware config.h 쪽에서만 의미가 있다.

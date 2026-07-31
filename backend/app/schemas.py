@@ -101,6 +101,11 @@ class MockDeviceRegister(BaseModel):
     name: Optional[str] = None
 
 
+class WeatherOut(BaseModel):
+    # 기상청 데이터가 없으면(키 미설정/조회 실패) null - 프론트는 온습도처럼 "-"로 표시한다.
+    condition: Optional[str] = None
+
+
 class HomeSummary(BaseModel):
     active_device_count: int
     humidity: Optional[float]
@@ -112,6 +117,10 @@ class HomeSummary(BaseModel):
 class SeriesPoint(BaseModel):
     x_label: str
     value: float
+    # 정렬/병합 전용 원본 버킷 키(예: "2026", "2026-07-30", "2026-07-30 21") - x_label은 표시용으로
+    # 정보가 손실돼 있어(연도 없는 "MM/DD", 날짜 없는 "HH시") 여러 기기의 시리즈를 하나로 합칠 때
+    # x_label만으로는 시간 순서를 복원할 수 없다. 문자열 그대로 정렬하면 항상 시간순이 된다.
+    sort_key: str
 
 
 class EnergySeries(BaseModel):

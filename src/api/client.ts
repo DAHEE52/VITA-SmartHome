@@ -81,6 +81,9 @@ export function updateDevice(
 export type SeriesPoint = {
   x_label: string;
   value: number;
+  // 정렬/병합 전용 원본 버킷 키(예: "2026", "2026-07-30", "2026-07-30 21") - x_label은 표시용이라
+  // 정보가 줄어 있어(연도 없는 "MM/DD" 등) 여러 기기 시리즈를 하나로 합칠 때 시간 순서를 보장하려면 이 값을 써야 한다.
+  sort_key: string;
 };
 
 export type EnergySeries = {
@@ -107,6 +110,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getHomeSummary(): Promise<HomeSummary> {
   return request<HomeSummary>('/home/summary');
+}
+
+export type WeatherOut = { condition: string | null };
+
+export function getWeather(): Promise<WeatherOut> {
+  return request<WeatherOut>('/weather/current');
 }
 
 export function getRoomsStatus(): Promise<RoomStatus[]> {

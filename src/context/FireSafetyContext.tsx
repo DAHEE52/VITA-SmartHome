@@ -89,13 +89,57 @@ function formatClock(d: Date) {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+// FirePreventionScreen의 "자동 대응 기록"이 빈 화면으로 보이지 않도록 채우는 더미 데이터. 이
+// Context도 EnergyHistoryContext처럼 백엔드에 저장되지 않는 순수 프런트 시뮬레이션이라, 실제
+// 이력을 쌓으려면 화면 안의 "화재 상황 시뮬레이션" 버튼으로 직접 위험 상태를 만들어야 한다 -
+// 데모에서 바로 보이도록 오늘 있었던 것처럼 보이는 기록 몇 건을 오늘 이른 시간대로 미리 채워둔다.
+// 실제 감지가 새로 발생하면 이 더미 위에 최신순으로 쌓인다(setAutoActions가 항상 배열 맨 앞에 추가).
+function buildDummyAutoActions(): AutoAction[] {
+  const today = new Date();
+  const at = (h: number, m: number, s: number) => {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, m, s);
+    return formatClock(d);
+  };
+  return [
+    {
+      id: 'dummy-action-4',
+      time: at(7, 42, 18),
+      roomLabel: 'ROOM',
+      deviceName: null,
+      message: 'ROOM의 온도가 5분 사이 6.2℃ 급상승해 화재 위험으로 판단, 전원을 자동 차단했어요.',
+    },
+    {
+      id: 'dummy-action-3',
+      time: at(6, 10, 5),
+      roomLabel: 'ROOM',
+      deviceName: '히터',
+      message: '🚨 "히터"(ROOM) 장시간 사용이 감지되어 화재 위험으로 판단, 전원을 자동 차단했어요.',
+    },
+    {
+      id: 'dummy-action-2',
+      time: at(1, 27, 40),
+      roomLabel: 'ROOM',
+      deviceName: '선풍기',
+      message: '⚡ "선풍기"(ROOM) 장시간 사용 패턴이 감지되어 전원을 자동 차단했어요.',
+    },
+    {
+      id: 'dummy-action-1',
+      time: at(0, 15, 52),
+      roomLabel: 'ROOM',
+      deviceName: '기기 제어 1',
+      message: '⚡ "기기 제어 1"(ROOM) 장시간 사용 패턴이 감지되어 전원을 자동 차단했어요.',
+    },
+    // 시간 역순(최신이 배열 맨 앞)으로 정렬해서, 실제 감지 로직이 새 항목을 앞에 붙이는 규칙과 맞춘다.
+  ].sort((a, b) => (a.time < b.time ? 1 : -1));
+}
+
 export function FireSafetyProvider({ children }: { children: ReactNode }) {
   const { rooms, forceOffDevice, forceOffRoom } = useRooms();
   const { pushNotification } = useNotifications();
   const { readings, getTemperatureRiseC } = useSensors();
   const { contacts: emergencyContacts } = useEmergencyContacts();
 
-  const [autoActions, setAutoActions] = useState<AutoAction[]>([]);
+  const [autoActions, setAutoActions] = useState<AutoAction[]>(buildDummyAutoActions);
   const [emergency, setEmergency] = useState<EmergencyEvent | null>(null);
   const [lastMotionAtMs, setLastMotionAtMs] = useState<number>(0);
   const [anomalyStatuses, setAnomalyStatuses] = useState<AnomalyStatus[]>([]);

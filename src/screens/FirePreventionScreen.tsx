@@ -241,6 +241,22 @@ export default function FirePreventionScreen() {
 
   const onDevicesWithRoom = rooms.flatMap((room) => room.devices.filter((d) => d.on).map((d) => ({ room, d })));
 
+  // "AI 이상 패턴 감지" 데모용 더미 항목 - 화면 전용이라 RoomsContext(실제 기기)를 거치지 않는다.
+  // 실제 기기의 onSince를 조작하면 FireSafetyContext의 5초 감시 루프가 곧바로 감지해서 진짜로 그
+  // 기기를 꺼버리고, 그러면 이 화면에서도 다시 "켜진 기기 없음"으로 사라져 버린다(실제로 겪은 문제).
+  // 그래서 실제 전원 제어와는 완전히 분리된, 화면에 보여주기만 하는 가짜 기기 하나를 항상 목록
+  // 맨 위에 띄운다 - 화면에 들어올 때마다 8분 전부터 켜져 있던 것처럼(정상 기준을 넘긴 상태로) 다시 잡는다.
+  const [demoAnomalyOnSince] = useState(() => Date.now() - 8 * 60 * 1000);
+  const demoAnomalyDevice: Device = {
+    id: 'demo-heater-01',
+    name: '히터',
+    on: true,
+    mode: 'manual',
+    onSince: demoAnomalyOnSince,
+    type: 'relay',
+    brightness: 100,
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
@@ -264,13 +280,10 @@ export default function FirePreventionScreen() {
           전원을 자동 차단해요. ({HIGH_RISK_KEYWORDS.join(' · ')}은 고위험 기기로 분류돼요.)
         </Text>
         <Card style={styles.anomalyCard}>
-          {onDevicesWithRoom.length > 0 ? (
-            onDevicesWithRoom.map(({ room, d }) => (
-              <AnomalyRow key={`${room.id}-${d.name}`} room={room.label} device={d} now={now} />
-            ))
-          ) : (
-            <Text style={styles.emptyHint}>지금 켜져 있는 기기가 없어요.</Text>
-          )}
+          <AnomalyRow room={rooms[0]?.label ?? 'ROOM'} device={demoAnomalyDevice} now={now} />
+          {onDevicesWithRoom.map(({ room, d }) => (
+            <AnomalyRow key={`${room.id}-${d.name}`} room={room.label} device={d} now={now} />
+          ))}
         </Card>
 
         <Text style={styles.sectionTitle}>방별 화재 감지 센서</Text>
