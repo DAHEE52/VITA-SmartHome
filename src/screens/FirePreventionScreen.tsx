@@ -2,19 +2,22 @@
 // 구조: 긴급 경보 카드(있을 때만) / 전체 요약 카드 / AI 이상 패턴 감지 현황 / 방별 상태 카드
 //      / 자동 대응 기록 / 하단 네비(홈)
 //
-// 위험도(안전/주의/위험)는 두 갈래를 합쳐서 판단한다.
-// 1) 기기 사용 패턴: RoomsContext의 실제 방·기기 on/off 상태 기준("화재가 자주 발생하는 원인"에 나온
-//    기기가 켜져 있으면 위험, 고전력 기기 동시 사용은 주의) + 종류별 정상 지속시간(fireRisk.ts)보다
-//    오래 켜져 있으면 "AI 이상 패턴 감지".
-// 2) 온도/습도 센서: SensorContext가 내놓는 값 기준(고온이면 위험). 아직 실제 센서가 연결되지 않아
-//    지금은 더미 값으로 채워지고 있고, 방 카드의 "화재 상황 시뮬레이션" 버튼으로 위험 범위 값을 직접
-//    만들어 감지 흐름을 확인해볼 수 있다. 나중에 실제 센서가 붙으면 SensorContext 내부만 교체하면
-//    되고, 이 화면과 판정 로직은 그대로 쓸 수 있다.
-// 위 둘 중 하나라도 위험이 감지되면(고위험 기기 이상 패턴, 또는 고온 센서) 전원을 자동 차단하고
-// 알림을 보내며, 이 화면에 119 신고 안내가 뜬다. 실제로 전화를 자동으로 걸 수는 없어서(운영체제가
-// 막음), "119 신고" 버튼은 전화 앱을 119가 입력된 채로 열어줄 뿐 - 실제 발신은 사용자가 통화 버튼을
-// 눌러야 이뤄진다.
-import React, { useEffect, useState } from 'react';
+// 이 화면은 서로 다른 두 판정을 함께 보여준다.
+// 1) 방 카드의 위험도(안전/주의/위험, getRoomRisk): 기기 사용 패턴(RoomsContext의 on/off 상태 기준 -
+//    "화재가 자주 발생하는 원인"에 나온 고위험 기기가 켜져 있으면 위험, 고전력 기기 동시 사용은 주의)과
+//    온도/습도 센서(SensorContext, 고온이면 위험) 중 더 심각한 쪽을 그 방의 최종 위험도로 삼는다.
+//    센서는 아직 실제 하드웨어가 연결되지 않아 더미 값으로 채워지고, 방 카드의 "화재 상황 시뮬레이션"
+//    버튼으로 위험 범위 값을 직접 만들어 감지 흐름을 확인해볼 수 있다. 나중에 실제 센서가 붙으면
+//    SensorContext 내부만 교체하면 되고, 이 화면과 판정 로직은 그대로 쓸 수 있다.
+// 2) "AI 이상 패턴 감지" 카드(anomalyStatuses): 위 방 위험도와 별개로, 전력 측정 기기별 평소 사용
+//    패턴을 백엔드(backend/app/anomaly/)가 14일간 학습해 점수/등급을 매긴다 - 방 카드처럼 기기 종류
+//    키워드가 아니라 그 기기 자신의 과거 데이터를 기준으로 판단한다. 위험 등급이면 백엔드가 전력을
+//    직접 차단하고 비상 연락처로 SMS를 보낸다(FireSafetyContext가 GET /anomaly를 폴링해 반영).
+// 온도 위험(고온 센서 급상승)에 대해서는, 실제 비상 알림(전원 차단·안전 확인·비상 연락망 알림)이 PIR
+// 무움직임까지 함께 확인해야 발동한다(FireSafetyContext의 isFireSuspected). 실제로 전화를 자동으로 걸
+// 수는 없어서(운영체제가 막음), "119 신고" 버튼은 전화 앱을 119가 입력된 채로 열어줄 뿐 - 실제 발신은
+// 사용자가 통화 버튼을 눌러야 이뤄진다.
+import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,12 +25,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme/colors';
 import Card from '../components/Card';
 import BottomNav from '../components/BottomNav';
-import { useRooms, Room, Device } from '../context/RoomsContext';
+import { useRooms, Room } from '../context/RoomsContext';
 import { useFireSafety } from '../context/FireSafetyContext';
 import { useSensors } from '../context/SensorContext';
 import { estimateWattage } from '../utils/energy';
+import { AnomalyLevel, AnomalyStatus } from '../api/client';
 import {
-  getNormalDurationMs,
   isHighRiskDevice,
   HIGH_RISK_KEYWORDS,
   sensorRiskLevel,
@@ -51,6 +54,13 @@ const RISK_META: Record<RiskLevel, { label: string; color: string }> = {
 };
 
 const RISK_RANK: Record<RiskLevel, number> = { safe: 0, caution: 1, danger: 2 };
+
+const ANOMALY_LEVEL_META: Record<AnomalyLevel, { label: string; color: string }> = {
+  normal: { label: '정상', color: colors.green },
+  caution: { label: '주의', color: colors.yellow },
+  warning: { label: '경고', color: colors.orange },
+  danger: { label: '위험', color: colors.red },
+};
 
 // 기기 사용 패턴만 근거로 한 위험도(기존 로직).
 function getDeviceRisk(room: Room): { level: RiskLevel; reason: string | null } {
@@ -104,13 +114,6 @@ function getRoomRisk(
   return RISK_RANK[sensorRisk.level] >= RISK_RANK[deviceRisk.level] ? sensorRisk : deviceRisk;
 }
 
-function formatDuration(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return m > 0 ? `${m}분 ${s}초` : `${s}초`;
-}
-
 // 긴급 경보 카드 - 실제 응답(안전 확인/119 신고)은 MainScreen의 전역 팝업(FireEmergencyModal)에서
 // 처리하므로, 여기서는 지금 상황을 놓치지 않도록 알려주는 상태 표시만 한다(버튼 없음 - 중복 UI 방지).
 function EmergencyBanner({ reason, phase }: { reason: string; phase: 'confirming' | 'escalated' }) {
@@ -127,37 +130,53 @@ function EmergencyBanner({ reason, phase }: { reason: string; phase: 'confirming
   );
 }
 
-// "AI 이상 패턴 감지" 한 줄 - 켜져 있는 기기 하나의 경과 시간 / 정상 지속시간을 보여준다.
-function AnomalyRow({ room, device, now }: { room: string; device: Device; now: number }) {
-  const normalMs = getNormalDurationMs(device.name);
-  const elapsedMs = device.onSince != null ? now - device.onSince : 0;
-  const isInfinite = !Number.isFinite(normalMs);
-  const ratio = isInfinite ? 0 : Math.min(1, elapsedMs / normalMs);
-  const isAnomalous = !isInfinite && elapsedMs > normalMs;
+// 기기 하나의 device_id를 "방 · 기기명"으로 바꿔준다. 등록된 방/기기에서 못 찾으면(예: 아직 방에
+// 배정되지 않은 콘센트) device_id를 그대로 보여준다.
+function findDeviceLabel(rooms: Room[], deviceId: string): string {
+  for (const room of rooms) {
+    const device = room.devices.find((d) => d.id === deviceId);
+    if (device) return `${room.label} · ${device.name}`;
+  }
+  return deviceId;
+}
+
+// "AI 이상 패턴 감지" 한 줄 - 백엔드(backend/app/anomaly/)가 계산한 점수/등급/근거를 그대로 보여준다.
+// is_learning은 "14일 학습 기간이 안 끝났다"는 뜻일 뿐 판정 자체가 없다는 뜻이 아니다 - 장시간
+// 사용·무재실·온도 급상승처럼 개인 학습 데이터가 필요 없는 조건은 학습 중에도 이미 감시하고
+// 있으므로, 학습 중이어도 점수/등급/근거는 그대로 보여주고 그 위에 안내 문구만 덧붙인다.
+function AnomalyRow({ label, status }: { label: string; status: AnomalyStatus }) {
+  const meta = ANOMALY_LEVEL_META[status.level];
+  const reasons = status.conditions.filter((c) => c.triggered);
 
   return (
     <View style={styles.anomalyRow}>
       <View style={styles.anomalyHeaderRow}>
         <Text style={styles.anomalyDeviceText} numberOfLines={1}>
-          {room} · {device.name}
+          {label}
         </Text>
-        <Text style={[styles.anomalyStatusText, isAnomalous && styles.anomalyStatusTextAlert]}>
-          {isAnomalous ? '이상 패턴' : '정상'}
+        <Text style={[styles.anomalyStatusText, { color: meta.color }]}>
+          {meta.label} · {status.score}점
         </Text>
       </View>
       <View style={styles.anomalyBarTrack}>
         <View
-          style={[
-            styles.anomalyBarFill,
-            { width: `${ratio * 100}%`, backgroundColor: isAnomalous ? colors.red : colors.green },
-          ]}
+          style={[styles.anomalyBarFill, { width: `${status.score}%`, backgroundColor: meta.color }]}
         />
       </View>
-      <Text style={styles.anomalyTimeText}>
-        {isInfinite
-          ? `계속 켜져 있어도 정상인 기기예요 (경과 ${formatDuration(elapsedMs)})`
-          : `경과 ${formatDuration(elapsedMs)} / 정상 기준 ${formatDuration(normalMs)}`}
-      </Text>
+      {status.is_learning && (
+        <Text style={styles.anomalyTimeText}>
+          아직 평소 패턴을 학습하는 중이에요(14일). 장시간 사용·무재실·온도 급상승은 학습 중에도 감시해요.
+        </Text>
+      )}
+      {reasons.length > 0 ? (
+        reasons.map((reason) => (
+          <Text key={reason.name} style={styles.anomalyTimeText}>
+            · {reason.detail}
+          </Text>
+        ))
+      ) : (
+        !status.is_learning && <Text style={styles.anomalyTimeText}>평소와 비슷하게 사용되고 있어요.</Text>
+      )}
     </View>
   );
 }
@@ -215,15 +234,8 @@ function RoomRiskCard({
 
 export default function FirePreventionScreen() {
   const { rooms } = useRooms();
-  const { autoActions, emergency } = useFireSafety();
+  const { autoActions, emergency, anomalyStatuses } = useFireSafety();
   const { readings, isSimulatingFire, simulateFire, clearSimulation, getTemperatureRiseC } = useSensors();
-  const [now, setNow] = useState(() => Date.now());
-
-  // 경과 시간 표시를 1초마다 갱신한다(실제 감시/자동 차단은 FireSafetyContext가 화면과 무관하게 처리).
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const risks = rooms.map((room) => ({
     room,
@@ -238,24 +250,6 @@ export default function FirePreventionScreen() {
       : cautionCount > 0
       ? { text: `${cautionCount}개 방 주의 필요`, color: colors.yellow }
       : { text: '모든 방 안전', color: colors.green };
-
-  const onDevicesWithRoom = rooms.flatMap((room) => room.devices.filter((d) => d.on).map((d) => ({ room, d })));
-
-  // "AI 이상 패턴 감지" 데모용 더미 항목 - 화면 전용이라 RoomsContext(실제 기기)를 거치지 않는다.
-  // 실제 기기의 onSince를 조작하면 FireSafetyContext의 5초 감시 루프가 곧바로 감지해서 진짜로 그
-  // 기기를 꺼버리고, 그러면 이 화면에서도 다시 "켜진 기기 없음"으로 사라져 버린다(실제로 겪은 문제).
-  // 그래서 실제 전원 제어와는 완전히 분리된, 화면에 보여주기만 하는 가짜 기기 하나를 항상 목록
-  // 맨 위에 띄운다 - 화면에 들어올 때마다 8분 전부터 켜져 있던 것처럼(정상 기준을 넘긴 상태로) 다시 잡는다.
-  const [demoAnomalyOnSince] = useState(() => Date.now() - 8 * 60 * 1000);
-  const demoAnomalyDevice: Device = {
-    id: 'demo-heater-01',
-    name: '히터',
-    on: true,
-    mode: 'manual',
-    onSince: demoAnomalyOnSince,
-    type: 'relay',
-    brightness: 100,
-  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -276,14 +270,20 @@ export default function FirePreventionScreen() {
 
         <Text style={styles.sectionTitle}>🤖 AI 이상 패턴 감지</Text>
         <Text style={styles.sectionHint}>
-          기기 종류별 평소 사용 패턴을 기준으로, 정상 범위보다 오래 켜져 있으면 이상 패턴으로 보고
-          전원을 자동 차단해요. ({HIGH_RISK_KEYWORDS.join(' · ')}은 고위험 기기로 분류돼요.)
+          전력 측정 기기별로 평소 사용 패턴(전력량·지속시간·시간대 등)을 14일간 학습해요. 전력량·
+          시간대처럼 개인 데이터가 필요한 조건은 학습이 끝나야 정확해지지만, 장시간 사용·무재실·
+          온도 급상승 조건은 학습 중에도 바로 감시를 시작해요(헤어드라이기·충전기처럼 어쩌다 한 번씩
+          쓰는 기기도 최소한의 보호를 받도록). 점수가 높으면(위험) 전원을 자동 차단하고 비상 연락처로
+          알려요.
         </Text>
         <Card style={styles.anomalyCard}>
-          <AnomalyRow room={rooms[0]?.label ?? 'ROOM'} device={demoAnomalyDevice} now={now} />
-          {onDevicesWithRoom.map(({ room, d }) => (
-            <AnomalyRow key={`${room.id}-${d.name}`} room={room.label} device={d} now={now} />
-          ))}
+          {anomalyStatuses.length > 0 ? (
+            anomalyStatuses.map((status) => (
+              <AnomalyRow key={status.device_id} label={findDeviceLabel(rooms, status.device_id)} status={status} />
+            ))
+          ) : (
+            <Text style={styles.emptyHint}>아직 학습 중인 전력 측정 기기가 없어요.</Text>
+          )}
         </Card>
 
         <Text style={styles.sectionTitle}>방별 화재 감지 센서</Text>
@@ -449,9 +449,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.jalnan,
     fontSize: 12,
     color: colors.green,
-  },
-  anomalyStatusTextAlert: {
-    color: colors.red,
   },
   anomalyBarTrack: {
     height: 6,

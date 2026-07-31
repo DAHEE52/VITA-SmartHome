@@ -112,14 +112,23 @@ def _level_to_action(level: AnomalyLevel) -> AnomalyAction:
 class RuleBasedAnomalyEngine(BaseAnomalyEngine):
     """스펙 4~7단계를 그대로 구현한 규칙 기반 엔진.
 
-    학습이 아직 안 끝났거나(1단계 14일 이내) 비교할 모드가 없으면 무조건 정상으로 본다 -
-    기준 자체가 아직 없는데 이상 여부를 판단하는 건 의미가 없기 때문("처음 14일 동안은
-    이상 감지를 하지 않는다").
+    프로필 자체가 없으면(기기가 아예 등록만 되고 표본이 하나도 없음) 무조건 정상으로 본다 -
+    비교할 게 전혀 없어서다. 하지만 프로필이 있다면, 14일 학습 기간이 아직 안 끝났어도 조건은
+    전부 평가한다 - 조건마다 이미 자체적으로 "표본이 부족하면 비활성" 가드가 있어서
+    (_check_power_anomaly의 mode.power.count<2, _check_unusual_hour의 total<
+    UNUSUAL_HOUR_MIN_SAMPLES 등), 개인화된 학습 데이터가 필요한 조건은 자연스럽게 꺼져 있고
+    장시간 사용·무재실·온도 급상승처럼 학습과 무관하게 판단 가능한 조건은 학습 기간에도 계속
+    감시할 수 있다. 예전엔 이 전체를 "학습 완료 전엔 무조건 정상" 게이트로 한 번에 막았는데,
+    그러면 헤어드라이기처럼 어쩌다 한두 번 꽂아 써서 14일 안에 표본이 거의 안 쌓이는 기기는
+    학습 기간 내내(그리고 사실상 그 이후로도) 장시간 방치돼도 전혀 감지되지 않는 사각지대가
+    생겼다. 참고로 표본 의존 조건(전력 이상 25점 + 비정상 시간대 10점)이 꺼져 있으면 나머지를
+    다 더해도 75점(장시간20+무재실25+온도20+급변10)이라 "위험"(80점 이상)에는 못 닿으므로,
+    학습이 전혀 안 된 기기가 곧장 자동 전원 차단까지 가는 일은 없다.
     """
 
     def evaluate(self, context: AnomalyContext) -> AnomalyResult:
         profile = context.profile
-        if profile is None or not profile.is_learning_complete(context.now):
+        if profile is None:
             return AnomalyResult(
                 device_id=context.device_id, score=0, level="normal", action="none", is_learning=True
             )
@@ -145,7 +154,7 @@ class RuleBasedAnomalyEngine(BaseAnomalyEngine):
             level=level,
             action=action,
             conditions=conditions,
-            is_learning=False,
+            is_learning=not profile.is_learning_complete(context.now),
         )
 
     # 조건1: 현재 전력이 해당 모드 평균보다 표준편차 기준을 크게 벗어나는가?

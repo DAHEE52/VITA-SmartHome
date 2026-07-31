@@ -28,6 +28,9 @@ yarn-error.*
 
 # macOS
 .DS_Store
+
+# demo-day 플러그인이 만드는 발표용 릴레이 페이지 포크 - 별도의 독립된 git 저장소라 여기 끼워넣으면 안 됨
+nicewebforpresentation/
 *.pem
 
 # secrets (절대 커밋 금지)

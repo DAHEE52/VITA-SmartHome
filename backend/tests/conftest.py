@@ -31,6 +31,7 @@ class _QueryBuilder:
         self._filters: list[tuple[str, str, object]] = []
         self._order = None
         self._limit = None
+        self._single = False
 
     def select(self, *_args, **_kwargs):
         self._op = self._op or "select"
@@ -84,6 +85,12 @@ class _QueryBuilder:
         self._limit = n
         return self
 
+    def single(self):
+        # supabase-py의 .single()은 정확히 한 행을 기대하고 .data를 리스트가 아니라 그 한 행
+        # 자체(dict)로 준다 - devices.py의 ack_command가 이 모양(res.data["command"])에 의존한다.
+        self._single = True
+        return self
+
     def _matches(self, row):
         for kind, col, val in self._filters:
             if kind == "eq" and row.get(col) != val:
@@ -129,6 +136,8 @@ class _QueryBuilder:
                 result.sort(key=lambda r: r[col], reverse=desc)
             if self._limit is not None:
                 result = result[: self._limit]
+            if self._single:
+                return _Result(result[0] if result else None)
             return _Result(result)
 
         if self._op == "insert":
@@ -143,6 +152,11 @@ class _QueryBuilder:
                 for ts_col in ("recorded_at", "created_at"):
                     if ts_col not in row:
                         row[ts_col] = datetime.now(timezone.utc).isoformat()
+                # device_commands.status도 스키마 기본값이 'pending'이다(schema.sql 참고) -
+                # rooms.py의 control_device가 status를 안 넣고 insert하므로 여기서도 채워야
+                # commands/pending의 .eq("status", "pending") 필터가 실제 DB와 동일하게 동작한다.
+                if self._table == "device_commands" and "status" not in row:
+                    row["status"] = "pending"
                 rows.append(row)
                 created.append(dict(row))
             return _Result(created)

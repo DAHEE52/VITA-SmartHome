@@ -15,10 +15,10 @@ import * as api from '../api/client';
 import { usePresence } from './PresenceContext';
 import { useRooms } from './RoomsContext';
 import { useNotifications } from './NotificationsContext';
+import { useHomeSummary } from './HomeSummaryContext';
 import { getDeviceType } from '../utils/energy';
 
 const TICK_INTERVAL_MS = 10000;
-const SUMMARY_POLL_MS = 10000;
 // 취침 대기 진입 후에도 새벽 활동을 "취침 시간"으로 계속 취급하기 위한 이른 새벽 경계.
 const EARLY_MORNING_HOUR_CUTOFF = 6;
 // "확인"을 누르면 이 시간 동안은 조건이 다시 충족돼도 재질문하지 않는다.
@@ -60,6 +60,7 @@ export function SleepProvider({ children }: { children: ReactNode }) {
   const { isHome } = usePresence();
   const { rooms, setDevicePower } = useRooms();
   const { pushNotification } = useNotifications();
+  const { summary } = useHomeSummary();
 
   const [preset, setPresetState] = useState<api.SleepPreset | null>(null);
   const [state, setState] = useState<SleepState>('idle');
@@ -91,25 +92,10 @@ export function SleepProvider({ children }: { children: ReactNode }) {
     api.getSleepPreset().then(setPresetState).catch((err) => console.warn('취침 프리셋 조회 실패:', err));
   }, []);
 
-  // 최근 움직임 시각을 주기적으로 갱신한다 - /home/summary.last_motion_at.
+  // 최근 움직임 시각 - HomeSummaryContext(/home/summary를 한 곳에서만 폴링)가 갱신할 때마다 반영한다.
   useEffect(() => {
-    let cancelled = false;
-    const poll = () => {
-      api
-        .getHomeSummary()
-        .then((summary) => {
-          if (cancelled) return;
-          if (summary.last_motion_at) setLastMotionAtMs(new Date(summary.last_motion_at).getTime());
-        })
-        .catch((err) => console.warn('최근 움직임 조회 실패:', err));
-    };
-    poll();
-    const timer = setInterval(poll, SUMMARY_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
+    if (summary?.last_motion_at) setLastMotionAtMs(new Date(summary.last_motion_at).getTime());
+  }, [summary]);
 
   // preset.devices에 등록된 기기들을 각자 지정된 on/off 상태로 맞춘다(사용자가 자동화 규칙
   // 화면의 "🛏 취침 모드" 버튼에서 직접 고른 기기와 목표 상태). invert=true면 그 반대로 맞춘다 - 기상 시 취침 모드가 바꿔놓은
