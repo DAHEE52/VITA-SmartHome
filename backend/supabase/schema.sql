@@ -154,11 +154,25 @@ create table if not exists sleep_preset (
   id int primary key default 1,
   devices jsonb not null default '[]',
   bedtime_hour int not null default 20 check (bedtime_hour between 0 and 23),
-  no_motion_minutes int not null default 30 check (no_motion_minutes > 0),
+  -- 취침 감지에 필요한 무움직임 시간(초 단위 - 예전엔 분 단위였다가 더 세밀하게(최소 10초까지)
+  -- 테스트/조정할 수 있도록 초 단위로 바꿨다).
+  no_motion_seconds int not null default 30 check (no_motion_seconds > 0),
   confirm_wait_minutes int not null default 5 check (confirm_wait_minutes > 0),
   constraint sleep_preset_singleton check (id = 1)
 );
 insert into sleep_preset (id) values (1) on conflict (id) do nothing;
+-- 마이그레이션: no_motion_minutes(분)에서 no_motion_seconds(초)로 컬럼명을 바꾼 기존 프로젝트용.
+-- 새 프로젝트에서는 위 create table로 처음부터 no_motion_seconds로 생성되므로(컬럼이 이미 있으므로)
+-- 아래는 그냥 no-op - plain "rename column"에는 if-exists가 없어서 조건부로 감쌌다.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'sleep_preset' and column_name = 'no_motion_minutes'
+  ) then
+    alter table sleep_preset rename column no_motion_minutes to no_motion_seconds;
+  end if;
+end $$;
 
 -- 마이그레이션: 기기 종류를 고정 가정하던 이전 버전(light_on/aircon_on/aircon_temp/dehumidify/
 -- humidifier_on/tv_off/pc_off)에서 devices(jsonb) 기반으로 바뀌기 전에 만들어진 기존 프로젝트용.

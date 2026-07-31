@@ -230,29 +230,15 @@ class SleepDeviceConfig(BaseModel):
 class SleepPresetOut(BaseModel):
     devices: list[SleepDeviceConfig]
     bedtime_hour: int
-    no_motion_minutes: int
+    no_motion_seconds: int
     confirm_wait_minutes: int
 
 
 class SleepPresetUpdate(BaseModel):
     devices: Optional[list[SleepDeviceConfig]] = None
     bedtime_hour: Optional[int] = None
-    no_motion_minutes: Optional[int] = None
+    no_motion_seconds: Optional[int] = None
     confirm_wait_minutes: Optional[int] = None
-
-
-class SleepRecordOut(BaseModel):
-    id: int
-    sleep_started_at: str
-    sleep_ended_at: Optional[str] = None
-
-
-class SleepRecordCreate(BaseModel):
-    sleep_started_at: str
-
-
-class SleepRecordEnd(BaseModel):
-    sleep_ended_at: str
 
 
 class ClassifyIn(BaseModel):

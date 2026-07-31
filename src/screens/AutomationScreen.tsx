@@ -215,18 +215,18 @@ function SleepPresetModal({ visible, onClose }: { visible: boolean; onClose: () 
                   value={preset.bedtime_hour}
                   unit="시"
                   step={1}
-                  min={18}
+                  min={0}
                   max={23}
                   onChange={(v) => setPreset({ bedtime_hour: v })}
                 />
                 <SleepStepperRow
                   label="무움직임 감지 시간"
-                  value={preset.no_motion_minutes}
-                  unit="분"
-                  step={5}
-                  min={5}
-                  max={60}
-                  onChange={(v) => setPreset({ no_motion_minutes: v })}
+                  value={preset.no_motion_seconds}
+                  unit="초"
+                  step={10}
+                  min={10}
+                  max={3600}
+                  onChange={(v) => setPreset({ no_motion_seconds: v })}
                 />
 
                 <Text style={[styles.fieldLabel, { marginTop: 18 }]}>🌙 취침 모드로 전환될 기기 설정</Text>

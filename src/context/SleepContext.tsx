@@ -7,9 +7,9 @@
 //
 // 별도의 취침 전용 카메라 모델(이불 덮음/자는 중 분류) 없이도, 이미 있는 재실 카메라(presence)와
 // PIR 모션 센서(motion, env_presence_node가 push)만으로 명세서의 판정 로직을 그대로 구현할 수 있다:
-// "30분 무움직임"은 last_motion_at(가장 최근 motion=1 시각) 기준으로 매 tick마다 재계산한다 -
-// waiting 진입 시점을 따로 카운트하지 않아도, 실제 마지막 움직임 이후 경과 시간이 곧 정답이라
-// 도중에 움직이면 자연히 그 시점부터 다시 30분을 채워야 한다.
+// "무움직임 시간"(초 단위, no_motion_seconds)은 last_motion_at(가장 최근 motion=1 시각) 기준으로
+// 매 tick마다 재계산한다 - waiting 진입 시점을 따로 카운트하지 않아도, 실제 마지막 움직임 이후
+// 경과 시간이 곧 정답이라 도중에 움직이면 자연히 그 시점부터 다시 채워야 한다.
 import React, { createContext, useContext, useState, useRef, useEffect, ReactNode } from 'react';
 import * as api from '../api/client';
 import { usePresence } from './PresenceContext';
@@ -65,8 +65,7 @@ export function SleepProvider({ children }: { children: ReactNode }) {
   const [confirmStartedAt, setConfirmStartedAt] = useState<number | null>(null);
   const [sleepStartedAt, setSleepStartedAt] = useState<number | null>(null);
   const [lastMotionAtMs, setLastMotionAtMs] = useState<number>(0);
-  const sleepRecordIdRef = useRef<number | null>(null);
-  // "나중에"를 누른 시각 - 여기서부터 다시 no_motion_minutes만큼 조용해야 재질문한다.
+  // "나중에"를 누른 시각 - 여기서부터 다시 no_motion_seconds만큼 조용해야 재질문한다.
   const dismissedAtRef = useRef<number | null>(null);
   // "확인"을 누르면 이 시각까지는 조건이 충족돼도 재질문을 건너뛴다.
   const suppressedUntilRef = useRef<number>(0);
@@ -133,12 +132,6 @@ export function SleepProvider({ children }: { children: ReactNode }) {
     setState('active');
     setSleepStartedAt(now);
     setConfirmStartedAt(null);
-    api
-      .startSleepRecord(new Date(now).toISOString())
-      .then((record) => {
-        sleepRecordIdRef.current = record.id;
-      })
-      .catch((err) => console.warn('취침 기록 시작 실패:', err));
     pushNotification(
       '✅ 취침 모드 활성화됨',
       p.devices.length > 0 ? '좋은 밤 되세요! 🌙 설정한 기기들이 지정한 상태로 조정됐어요.' : '좋은 밤 되세요! 🌙'
@@ -149,12 +142,6 @@ export function SleepProvider({ children }: { children: ReactNode }) {
     applySleepDevices(true);
 
     const startedAt = sleepStartedAtRef.current;
-    const recordId = sleepRecordIdRef.current;
-    if (recordId != null) {
-      api.endSleepRecord(recordId, new Date().toISOString()).catch((err) => console.warn('취침 기록 종료 실패:', err));
-    }
-    sleepRecordIdRef.current = null;
-
     const durationText =
       startedAt != null
         ? (() => {
@@ -172,7 +159,7 @@ export function SleepProvider({ children }: { children: ReactNode }) {
     setState('confirming');
     setConfirmStartedAt(Date.now());
     const p = presetRef.current;
-    pushNotification('취침 중이신가요?', `${p?.no_motion_minutes ?? 30}분간 움직임이 없었어요`);
+    pushNotification('취침 중이신가요?', `${p?.no_motion_seconds ?? 30}초간 움직임이 없었어요`);
   };
 
   useEffect(() => {
@@ -186,7 +173,7 @@ export function SleepProvider({ children }: { children: ReactNode }) {
       const lightOff = lightDevices.every(({ device }) => !device.on);
       const baseConditionsMet = isHomeRef.current && lightOff && isBedtimeWindow;
       // "나중에"를 누른 시각도 무움직임 계산의 기준점으로 삼는다 - 그래야 실제 센서 움직임이 없어도
-      // 다시 no_motion_minutes가 통째로 지나야 재질문한다("나중에 누르고 30분 뒤 다시 질문").
+      // 다시 no_motion_seconds가 통째로 지나야 재질문한다("나중에 누르고 N초 뒤 다시 질문").
       const motionBaselineMs = Math.max(lastMotionAtMsRef.current, dismissedAtRef.current ?? 0);
       const noMotionMs = now - motionBaselineMs;
       const suppressed = now < suppressedUntilRef.current;
@@ -194,14 +181,14 @@ export function SleepProvider({ children }: { children: ReactNode }) {
       switch (stateRef.current) {
         case 'idle':
           if (baseConditionsMet) {
-            if (noMotionMs >= p.no_motion_minutes * 60000 && !suppressed) enterConfirming();
+            if (noMotionMs >= p.no_motion_seconds * 1000 && !suppressed) enterConfirming();
             else setState('waiting');
           }
           break;
         case 'waiting':
           if (!baseConditionsMet) {
             setState('idle');
-          } else if (noMotionMs >= p.no_motion_minutes * 60000 && !suppressed) {
+          } else if (noMotionMs >= p.no_motion_seconds * 1000 && !suppressed) {
             enterConfirming();
           }
           break;
@@ -234,7 +221,7 @@ export function SleepProvider({ children }: { children: ReactNode }) {
   };
 
   // "나중에" - 알림 창을 닫고 대기 상태로 되돌린다. 지금 이 순간을 새 기준점으로 삼아서, 다시
-  // no_motion_minutes만큼 조용해야만 재질문한다(그 전에 실제 움직임이 감지되면 기준점이 그걸로 대체됨).
+  // no_motion_seconds만큼 조용해야만 재질문한다(그 전에 실제 움직임이 감지되면 기준점이 그걸로 대체됨).
   const dismiss = () => {
     if (stateRef.current !== 'confirming') return;
     dismissedAtRef.current = Date.now();

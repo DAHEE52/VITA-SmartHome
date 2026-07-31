@@ -268,7 +268,8 @@ export function deleteAutomationRule(id: number): Promise<{ ok: boolean }> {
   return request(`/automation-rules/${id}`, { method: 'DELETE' });
 }
 
-// --- 취침 모드(sleep_preset/sleep_records) ---
+// --- 취침 모드(sleep_preset) ---
+// 수면 통계(sleep_records) 기능은 제거됨 - 취침 감지/자동 대응(SleepContext)만 남아있다.
 
 // 취침 모드에 포함시킬 기기 하나 - device_id는 실제 등록된 기기(RoomsContext)의 id, on은 취침
 // 모드가 활성화될 때 이 기기를 켤지/끌지.
@@ -280,7 +281,7 @@ export type SleepDeviceConfig = {
 export type SleepPreset = {
   devices: SleepDeviceConfig[];
   bedtime_hour: number;
-  no_motion_minutes: number;
+  no_motion_seconds: number;
   confirm_wait_minutes: number;
 };
 
@@ -290,24 +291,6 @@ export function getSleepPreset(): Promise<SleepPreset> {
 
 export function updateSleepPreset(body: Partial<SleepPreset>): Promise<SleepPreset> {
   return request('/sleep/preset', { method: 'PATCH', body: JSON.stringify(body) });
-}
-
-export type SleepRecord = {
-  id: number;
-  sleep_started_at: string;
-  sleep_ended_at: string | null;
-};
-
-export function getSleepRecords(period: Period): Promise<SleepRecord[]> {
-  return request<SleepRecord[]>(`/sleep/records?period=${period}`);
-}
-
-export function startSleepRecord(sleepStartedAt: string): Promise<SleepRecord> {
-  return request('/sleep/records', { method: 'POST', body: JSON.stringify({ sleep_started_at: sleepStartedAt }) });
-}
-
-export function endSleepRecord(id: number, sleepEndedAt: string): Promise<SleepRecord> {
-  return request(`/sleep/records/${id}`, { method: 'PATCH', body: JSON.stringify({ sleep_ended_at: sleepEndedAt }) });
 }
 
 // 기기 이상 패턴 감지(backend/app/anomaly/) - 학습된 사용 습관 대비 지금 상태의 점수/등급.

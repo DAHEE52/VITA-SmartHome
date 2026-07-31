@@ -371,7 +371,7 @@ function SleepConfirmModal() {
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>취침 중이신가요?</Text>
-          <Text style={styles.modalSubtitle}>{preset.no_motion_minutes}분간 움직임이 없었어요.</Text>
+          <Text style={styles.modalSubtitle}>{preset.no_motion_seconds}초간 움직임이 없었어요.</Text>
           <View style={styles.modalBottomRow}>
             <AnimatedPressable style={styles.modalCloseButton} onPress={dismiss} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>나중에</Text>
