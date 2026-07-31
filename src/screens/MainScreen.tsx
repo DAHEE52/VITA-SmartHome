@@ -347,14 +347,18 @@ function AiRecommendationBanner({ scale }: { scale: number }) {
   );
 }
 
-// "😴 수면 중" 배너 - SleepContext.state가 active일 때만 보인다.
+// "😴 수면 중" 배너 - SleepContext.state가 active일 때만 보인다. 누르면 취침 모드를 바로 끈다
+// (기상 감지와 동일하게 기기 상태를 원래대로 되돌림 - SleepContext.endSleepMode 참고).
 function SleepBanner({ scale }: { scale: number }) {
-  const { state } = useSleep();
+  const { state, endSleepMode } = useSleep();
   if (state !== 'active') return null;
   return (
-    <Card style={[styles.sleepBanner, { padding: 14 * scale }]}>
-      <Text style={[styles.sleepBannerText, { fontSize: 14 * scale }]}>😴 수면 중 - 취침 모드가 활성화됐어요</Text>
-    </Card>
+    <AnimatedPressable onPress={endSleepMode} activeOpacity={0.8}>
+      <Card style={[styles.sleepBanner, { padding: 14 * scale }]}>
+        <Text style={[styles.sleepBannerText, { fontSize: 14 * scale }]}>😴 수면 중 - 취침 모드가 활성화됐어요</Text>
+        <Text style={[styles.sleepBannerHint, { fontSize: 11 * scale }]}>탭하면 취침 모드를 꺼요</Text>
+      </Card>
+    </AnimatedPressable>
   );
 }
 
@@ -643,6 +647,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.jalnan,
     color: colors.white,
     textAlign: 'center',
+  },
+  sleepBannerHint: {
+    color: colors.white,
+    opacity: 0.8,
+    textAlign: 'center',
+    marginTop: 4,
   },
 
   goalCard: {},

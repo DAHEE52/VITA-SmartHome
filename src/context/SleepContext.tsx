@@ -33,6 +33,7 @@ type SleepContextValue = {
   sleepStartedAt: number | null; // 취침 모드가 활성화된 시각(ms)
   confirm: () => void; // "확인" 버튼 - 즉시 취침 모드 활성화하고, 이후 12시간은 재질문하지 않음
   dismiss: () => void; // "나중에" 버튼 - 알림을 닫고, 다시 무움직임 시간만큼 조용해야 재질문함
+  endSleepMode: () => void; // 활성화된 취침 모드를 사용자가 직접 끔(MainScreen의 "😴 수면 중" 배너를 누르면 호출) - 기상 감지와 동일하게 처리
   setPreset: (patch: Partial<api.SleepPreset>) => void;
 };
 
@@ -239,9 +240,16 @@ export function SleepProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  // 사용자가 "😴 수면 중" 배너를 눌러 직접 취침 모드를 끈다 - 기상 감지(wakeUp)와 동일하게
+  // 기기 상태를 원래대로 되돌리고 idle로 돌아간다.
+  const endSleepMode = () => {
+    if (stateRef.current !== 'active') return;
+    wakeUp();
+  };
+
   return (
     <SleepContext.Provider
-      value={{ state, preset, confirmStartedAt, sleepStartedAt, confirm, dismiss, setPreset }}
+      value={{ state, preset, confirmStartedAt, sleepStartedAt, confirm, dismiss, endSleepMode, setPreset }}
     >
       {children}
     </SleepContext.Provider>
